@@ -1,0 +1,65 @@
+name: pg_management
+description: PG Management Software
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI & Core
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+
+  # State Management
+  riverpod: ^2.4.0
+  flutter_riverpod: ^2.4.0
+
+  # Database
+  sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.3
+  path: ^1.8.3
+  path_provider: ^2.1.0
+
+  # Authentication
+  google_sign_in: ^6.1.6
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  googleapis: ^12.0.0
+  googleapis_auth: ^1.4.1
+  url_launcher: ^6.3.0
+
+  # Notifications
+  flutter_local_notifications: ^19.4.0
+  workmanager: ^0.9.0+3
+
+  # Image & File
+  image_picker: ^1.0.4
+  file_picker: ^10.3.2
+
+  # Charts & Reports
+  fl_chart: ^0.65.0
+
+  # Utilities
+  intl: ^0.18.1
+  uuid: ^4.3.3
+  share_plus: ^7.2.1
+  permission_handler: ^11.0.1
+  shared_preferences: ^2.2.2
+  http: ^1.1.0
+
+  # PDF Generation
+  pdf: ^3.10.7
+  printing: ^5.11.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/

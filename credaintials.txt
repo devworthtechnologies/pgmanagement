@@ -1,0 +1,215 @@
+PS D:\Projects\pg_manager\android> ./gradlew signingReport
+
+> Task :app:signingReport
+Variant: debug
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+Variant: release
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+Variant: profile
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :file_picker:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :flutter_local_notifications:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :flutter_plugin_android_lifecycle:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :google_sign_in_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :image_picker_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :jni:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :jni_flutter:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :permission_handler_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :printing:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :share_plus:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :shared_preferences_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :sqflite_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+> Task :workmanager_android:signingReport
+Variant: debugAndroidTest
+Config: debug
+Store: C:\Users\gopin\.android\debug.keystore
+Alias: AndroidDebugKey
+MD5: CB:77:01:8F:DB:4B:61:1B:80:65:D2:9F:DD:93:0B:DA
+SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+SHA-256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Valid until: Sunday, 7 May, 2056
+----------
+
+[Incubating] Problems report is available at: file:///D:/Projects/pg_manager/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 2s
+18 actionable tasks: 14 executed, 4 up-to-date
+PS D:\Projects\pg_manager\android> keytool -list -v -alias androiddebugkey -keystore %USERPROFILE%\.android\debug.keystore -storepass android -keypass android
+keytool error: java.lang.Exception: Keystore file does not exist: %USERPROFILE%\.android\debug.keystore
+java.lang.Exception: Keystore file does not exist: %USERPROFILE%\.android\debug.keystore
+        at java.base/sun.security.tools.keytool.Main.doCommands(Main.java:923)
+        at java.base/sun.security.tools.keytool.Main.run(Main.java:423)
+        at java.base/sun.security.tools.keytool.Main.main(Main.java:416)
+PS D:\Projects\pg_manager\android> keytool -list -v -alias androiddebugkey -keystore "$env:USERPROFILE\.android\debug.keystore" -storepass android -keypass android
+Alias name: androiddebugkey
+Creation date: 15-May-2026
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: C=US, O=Android, CN=Android Debug
+Issuer: C=US, O=Android, CN=Android Debug
+Serial number: 1
+Valid from: Fri May 15 00:15:07 IST 2026 until: Sun May 07 00:15:07 IST 2056
+Certificate fingerprints:
+         SHA1: 1E:11:FF:0E:2C:D9:63:C8:D7:78:A5:30:74:C2:C3:73:37:12:32:FF
+         SHA256: B1:D7:15:5C:D5:86:9C:A5:BF:62:E7:40:98:19:A6:53:AB:24:FD:5D:6B:FB:A6:E4:B7:C6:C9:5F:7B:D5:B8:6A
+Signature algorithm name: SHA256withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 1
