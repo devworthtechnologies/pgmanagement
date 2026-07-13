@@ -1,93 +1,305 @@
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const useStore = create((set, get) => ({
-  pgDetails: {
-    pgName: 'Elegance PG',
-    ownerName: 'Admin',
-    totalRooms: 10,
-  },
-  guests: [
-    { id: 1, fullName: 'Rahul Sharma', phone: '+91 9876543210', roomNumber: '101', monthlyRent: 8500, status: 'Active', dueDate: 5 },
-    { id: 2, fullName: 'Aman Gupta', phone: '+91 9876543211', roomNumber: '102', monthlyRent: 9000, status: 'Active', dueDate: 2 },
-    { id: 3, fullName: 'Priya Singh', phone: '+91 9876543212', roomNumber: '201', monthlyRent: 12000, status: 'Inactive', dueDate: 1 }
-  ],
-  rooms: [
-    { id: 1, roomNumber: '101', type: '2 Sharing', capacity: 2, occupied: 1, status: 'Available' },
-    { id: 2, roomNumber: '102', type: '1 Sharing', capacity: 1, occupied: 1, status: 'Full' },
-    { id: 3, roomNumber: '201', type: '3 Sharing', capacity: 3, occupied: 0, status: 'Available' },
-  ],
-  payments: [
-    { id: 1, guestId: 1, amount: 8500, date: '2023-10-05', method: 'UPI' },
-    { id: 2, guestId: 2, amount: 9000, date: '2023-10-02', method: 'Cash' }
-  ],
-  
-  // Derived state functions
-  getStats: () => {
-    const { guests, payments, rooms } = get();
-    const activeGuests = guests.filter(g => g.status === 'Active');
-    const totalExpectedRent = activeGuests.reduce((sum, g) => sum + Number(g.monthlyRent), 0);
-    const totalIncome = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-    const totalCapacity = rooms.reduce((sum, r) => sum + Number(r.capacity), 0);
-    const totalOccupied = rooms.reduce((sum, r) => sum + Number(r.occupied), 0);
-    
-    // Very simple pending rent calculation for demo
-    const pendingRent = totalExpectedRent > totalIncome ? totalExpectedRent - totalIncome : 12500;
-    
-    return {
-      pendingRent,
-      totalIncome,
-      totalExpense: 4200, // Hardcoded for demo
-      occupancyRate: totalCapacity === 0 ? 0 : Math.round((totalOccupied / totalCapacity) * 100),
-      totalRooms: rooms.length
-    };
-  },
+import { bedsFreeOf, monthKeyOf, occupancyOf } from '../lib/rent';
 
-  addGuest: (guest) => set((state) => {
-    // Update room occupancy
-    const updatedRooms = state.rooms.map(r => {
-      if (r.roomNumber === guest.roomNumber) {
-        const newOccupied = r.occupied + 1;
-        return { ...r, occupied: newOccupied, status: newOccupied >= r.capacity ? 'Full' : 'Available' };
-      }
-      return r;
-    });
-    return { 
-      guests: [...state.guests, { ...guest, id: Date.now(), status: 'Active' }],
-      rooms: updatedRooms
-    };
-  }),
-  
-  updateGuest: (updatedGuest) => set((state) => ({
-    guests: state.guests.map(g => g.id === updatedGuest.id ? updatedGuest : g)
-  })),
+const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-  deleteGuest: (id) => set((state) => {
-    const guest = state.guests.find(g => g.id === id);
-    if (!guest) return state;
-    
-    const updatedRooms = state.rooms.map(r => {
-      if (r.roomNumber === guest.roomNumber) {
-        const newOccupied = Math.max(0, r.occupied - 1);
-        return { ...r, occupied: newOccupied, status: newOccupied >= r.capacity ? 'Full' : 'Available' };
-      }
-      return r;
-    });
-    
-    return {
-      guests: state.guests.filter(g => g.id !== id),
-      rooms: updatedRooms
-    };
-  }),
+const norm = (roomNumber) => String(roomNumber || '').trim().toLowerCase();
 
-  addRoom: (room) => set((state) => ({ 
-    rooms: [...state.rooms, { ...room, id: Date.now(), occupied: 0, status: 'Available' }] 
-  })),
-  
-  deleteRoom: (id) => set((state) => ({
-    rooms: state.rooms.filter(r => r.id !== id)
-  })),
+const initialData = {
+  onboarded: false,
+  pgDetails: { pgName: '', ownerName: '' },
+  guests: [],
+  rooms: [],
+  payments: [],
+};
 
-  addPayment: (payment) => set((state) => ({
-    payments: [{ ...payment, id: Date.now(), date: new Date().toISOString() }, ...state.payments]
-  }))
-}));
+// Every mutating action validates its invariants and returns { ok, error? } so
+// screens can pre-validate for inline UX while the store stays the last line
+// of defense. Room occupancy/status are derived (src/lib/rent.js), not stored.
+export const useStore = create(
+  persist(
+    (set, get) => ({
+      ...initialData,
+
+      completeOnboarding: ({ pgName, ownerName }) => {
+        const name = String(pgName || '').trim();
+        const owner = String(ownerName || '').trim();
+        if (!name || !owner) return { ok: false, error: 'Please fill in both fields.' };
+        set({ onboarded: true, pgDetails: { pgName: name, ownerName: owner } });
+        return { ok: true };
+      },
+
+      updatePgDetails: ({ pgName, ownerName }) => {
+        const name = String(pgName || '').trim();
+        const owner = String(ownerName || '').trim();
+        if (!name || !owner) return { ok: false, error: 'Please fill in both fields.' };
+        set({ pgDetails: { pgName: name, ownerName: owner } });
+        return { ok: true };
+      },
+
+      addRoom: ({ roomNumber, type, capacity, isAc, advanceDetails }) => {
+        const number = String(roomNumber || '').trim();
+        const roomType = String(type || '').trim();
+        const cap = Number(capacity);
+        const ac = Boolean(isAc);
+        const advance = String(advanceDetails || '').trim();
+        if (!number) return { ok: false, error: 'Room number is required.' };
+        if (!roomType) return { ok: false, error: 'Room type is required.' };
+        if (!Number.isInteger(cap) || cap < 1 || cap > 20) {
+          return { ok: false, error: 'Capacity must be a whole number between 1 and 20.' };
+        }
+        if (get().rooms.some((r) => norm(r.roomNumber) === norm(number))) {
+          return { ok: false, error: `Room ${number} already exists.` };
+        }
+        set((state) => ({
+          rooms: [...state.rooms, { id: makeId(), roomNumber: number, type: roomType, capacity: cap, isAc: ac, advanceDetails: advance }],
+        }));
+        return { ok: true };
+      },
+
+      updateRoom: (id, { roomNumber, type, capacity, isAc, advanceDetails }) => {
+        const state = get();
+        const room = state.rooms.find((r) => r.id === id);
+        if (!room) return { ok: false, error: 'Room not found.' };
+
+        const number = String(roomNumber || '').trim();
+        const roomType = String(type || '').trim();
+        const cap = Number(capacity);
+        const ac = Boolean(isAc);
+        const advance = String(advanceDetails || '').trim();
+        if (!number) return { ok: false, error: 'Room number is required.' };
+        if (!roomType) return { ok: false, error: 'Room type is required.' };
+        if (!Number.isInteger(cap) || cap < 1 || cap > 20) {
+          return { ok: false, error: 'Capacity must be a whole number between 1 and 20.' };
+        }
+        if (state.rooms.some((r) => r.id !== id && norm(r.roomNumber) === norm(number))) {
+          return { ok: false, error: `Room ${number} already exists.` };
+        }
+        const occupied = occupancyOf(room, state.guests);
+        if (cap < occupied) {
+          return { ok: false, error: `Capacity can't be below current occupancy (${occupied}).` };
+        }
+        set((s) => ({
+          rooms: s.rooms.map((r) => (r.id === id ? { ...r, roomNumber: number, type: roomType, capacity: cap, isAc: ac, advanceDetails: advance } : r)),
+          // Renaming a room carries its guests (and their payment history labels) along.
+          guests:
+            room.roomNumber === number
+              ? s.guests
+              : s.guests.map((g) => (g.roomNumber === room.roomNumber ? { ...g, roomNumber: number } : g)),
+        }));
+        return { ok: true };
+      },
+
+      deleteRoom: (id) => {
+        const state = get();
+        const room = state.rooms.find((r) => r.id === id);
+        if (!room) return { ok: false, error: 'Room not found.' };
+        const occupied = occupancyOf(room, state.guests);
+        if (occupied > 0) {
+          return { ok: false, error: `Room ${room.roomNumber} still has ${occupied} guest${occupied > 1 ? 's' : ''}. Move them out first.` };
+        }
+        set((s) => ({ rooms: s.rooms.filter((r) => r.id !== id) }));
+        return { ok: true };
+      },
+
+      addGuest: ({ fullName, phone, roomNumber, monthlyRent, aadharNumber, permanentAddress, profilePicture, guestType, stayDuration, stayUnit, advancePaid, food, foodType }) => {
+        const state = get();
+        const name = String(fullName || '').trim();
+        const phoneNumber = String(phone || '').trim();
+        const rent = Number(monthlyRent);
+        
+        const aadhar = String(aadharNumber || '').trim();
+        const address = String(permanentAddress || '').trim();
+        const picture = String(profilePicture || '').trim();
+        const gType = String(guestType || 'permanent').trim();
+        const duration = Number(stayDuration);
+        const unit = String(stayUnit || 'months').trim();
+        const advance = advancePaid != null && advancePaid !== '' ? Number(advancePaid) : null;
+        const hasFood = Boolean(food);
+        const typeFood = String(foodType || '').trim();
+
+        if (!name) return { ok: false, error: 'Full name is required.' };
+        if (!/^[+\d][\d\s-]{6,15}$/.test(phoneNumber)) {
+          return { ok: false, error: 'Enter a valid phone number.' };
+        }
+        if (!Number.isFinite(rent) || rent < 0) {
+          return { ok: false, error: 'Monthly rent must be a positive amount or zero.' };
+        }
+        const room = state.rooms.find((r) => norm(r.roomNumber) === norm(roomNumber));
+        if (!room) return { ok: false, error: 'Select a room.' };
+        if (bedsFreeOf(room, state.guests) === 0) {
+          return { ok: false, error: `Room ${room.roomNumber} is full.` };
+        }
+        set((s) => ({
+          guests: [
+            ...s.guests,
+            {
+              id: makeId(),
+              fullName: name,
+              phone: phoneNumber,
+              roomNumber: room.roomNumber,
+              monthlyRent: rent,
+              aadharNumber: aadhar,
+              permanentAddress: address,
+              profilePicture: picture,
+              guestType: gType,
+              stayDuration: isNaN(duration) ? null : duration,
+              stayUnit: unit,
+              advancePaid: advance,
+              food: hasFood,
+              foodType: typeFood,
+              active: true,
+              joinedAt: new Date().toISOString(),
+              movedOutAt: null,
+            },
+          ],
+        }));
+        return { ok: true };
+      },
+
+      updateGuest: (id, { fullName, phone, roomNumber, monthlyRent, aadharNumber, permanentAddress, profilePicture, guestType, stayDuration, stayUnit, advancePaid, food, foodType }) => {
+        const state = get();
+        const guest = state.guests.find((g) => g.id === id);
+        if (!guest) return { ok: false, error: 'Guest not found.' };
+
+        const name = String(fullName || '').trim();
+        const phoneNumber = String(phone || '').trim();
+        const rent = Number(monthlyRent);
+        
+        const aadhar = String(aadharNumber || '').trim();
+        const address = String(permanentAddress || '').trim();
+        const picture = String(profilePicture || '').trim();
+        const gType = String(guestType || 'permanent').trim();
+        const duration = Number(stayDuration);
+        const unit = String(stayUnit || 'months').trim();
+        const advance = advancePaid != null && advancePaid !== '' ? Number(advancePaid) : null;
+        const hasFood = Boolean(food);
+        const typeFood = String(foodType || '').trim();
+
+        if (!name) return { ok: false, error: 'Full name is required.' };
+        if (!/^[+\d][\d\s-]{6,15}$/.test(phoneNumber)) {
+          return { ok: false, error: 'Enter a valid phone number.' };
+        }
+        if (!Number.isFinite(rent) || rent < 0) {
+          return { ok: false, error: 'Monthly rent must be a positive amount or zero.' };
+        }
+        const room = state.rooms.find((r) => norm(r.roomNumber) === norm(roomNumber));
+        if (!room) return { ok: false, error: 'Select a room.' };
+        const movingRooms = room.roomNumber !== guest.roomNumber;
+        if (guest.active && movingRooms && bedsFreeOf(room, state.guests) === 0) {
+          return { ok: false, error: `Room ${room.roomNumber} is full.` };
+        }
+        set((s) => ({
+          guests: s.guests.map((g) =>
+            g.id === id
+              ? { 
+                  ...g, 
+                  fullName: name, 
+                  phone: phoneNumber, 
+                  roomNumber: room.roomNumber, 
+                  monthlyRent: rent,
+                  aadharNumber: aadhar,
+                  permanentAddress: address,
+                  profilePicture: picture,
+                  guestType: gType,
+                  stayDuration: isNaN(duration) ? null : duration,
+                  stayUnit: unit,
+                  advancePaid: advance,
+                  food: hasFood,
+                  foodType: typeFood
+                }
+              : g
+          ),
+        }));
+        return { ok: true };
+      },
+
+      setGuestActive: (id, active) => {
+        const state = get();
+        const guest = state.guests.find((g) => g.id === id);
+        if (!guest) return { ok: false, error: 'Guest not found.' };
+        if (guest.active === active) return { ok: true };
+        if (active) {
+          const room = state.rooms.find((r) => r.roomNumber === guest.roomNumber);
+          if (!room) return { ok: false, error: `Room ${guest.roomNumber} no longer exists. Edit the guest's room first.` };
+          if (bedsFreeOf(room, state.guests) === 0) {
+            return { ok: false, error: `Room ${room.roomNumber} is full. Edit the guest's room first.` };
+          }
+        }
+        set((s) => ({
+          guests: s.guests.map((g) =>
+            g.id === id ? { ...g, active, movedOutAt: active ? null : new Date().toISOString() } : g
+          ),
+        }));
+        return { ok: true };
+      },
+
+      deleteGuest: (id) => {
+        if (!get().guests.some((g) => g.id === id)) return { ok: false, error: 'Guest not found.' };
+        // Payments snapshot guestName at record time, so the ledger stays intact.
+        set((s) => ({ guests: s.guests.filter((g) => g.id !== id) }));
+        return { ok: true };
+      },
+
+      addPayment: ({ guestId, amount, method, forMonth }) => {
+        const state = get();
+        const guest = state.guests.find((g) => g.id === guestId);
+        if (!guest) return { ok: false, error: 'Select a guest.' };
+        const value = Number(amount);
+        if (!Number.isFinite(value) || value <= 0) {
+          return { ok: false, error: 'Amount must be a positive number.' };
+        }
+        const payMethod = String(method || '').trim();
+        if (!payMethod) return { ok: false, error: 'Select a payment method.' };
+        const month = /^\d{4}-\d{2}$/.test(forMonth) ? forMonth : monthKeyOf();
+        set((s) => ({
+          payments: [
+            {
+              id: makeId(),
+              guestId,
+              guestName: guest.fullName,
+              roomNumber: guest.roomNumber,
+              amount: value,
+              method: payMethod,
+              forMonth: month,
+              date: new Date().toISOString(),
+            },
+            ...s.payments,
+          ],
+        }));
+        return { ok: true };
+      },
+
+      deletePayment: (id) => {
+        if (!get().payments.some((p) => p.id === id)) return { ok: false, error: 'Payment not found.' };
+        set((s) => ({ payments: s.payments.filter((p) => p.id !== id) }));
+        return { ok: true };
+      },
+
+      eraseAllData: () => {
+        set({ ...initialData });
+        return { ok: true };
+      },
+    }),
+    {
+      name: 'pg-manager-storage',
+      version: 1,
+      storage: createJSONStorage(() => AsyncStorage),
+    }
+  )
+);
+
+// True once persisted state has been loaded from AsyncStorage.
+export function useHydrated() {
+  const [hydrated, setHydrated] = useState(() => useStore.persist.hasHydrated());
+  useEffect(() => {
+    const unsubFinish = useStore.persist.onFinishHydration(() => setHydrated(true));
+    setHydrated(useStore.persist.hasHydrated());
+    return unsubFinish;
+  }, []);
+  return hydrated;
+}
