@@ -11,6 +11,14 @@ class PaymentCreateRequest(BaseModel):
     idempotency_key: uuid.UUID
     notes: str | None = None
 
+class PaymentVoidRequest(BaseModel):
+    reason: str | None = None
+
+class PaymentCorrectRequest(PaymentCreateRequest):
+    """Same fields as recording a payment — the corrected values, plus a fresh
+    idempotency_key — with an optional reason recorded against the voided row."""
+    reason: str | None = None
+
 class PaymentResponse(BaseModel):
     id: uuid.UUID
     property_id: uuid.UUID
@@ -24,6 +32,13 @@ class PaymentResponse(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+    # Void marker and provenance. `deleted_at` non-null means voided — it is the
+    # void timestamp, not a separate soft-delete concept.
+    deleted_at: datetime | None
+    voided_by: uuid.UUID | None
+    void_reason: str | None
+    corrects_payment_id: uuid.UUID | None
 
     class Config:
         from_attributes = True

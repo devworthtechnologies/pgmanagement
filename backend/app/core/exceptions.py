@@ -29,3 +29,8 @@ class RoomInUseError(PGManagerError):
 class RoomFullError(PGManagerError):
     """Raised when attempting to add a guest to a room that is fully occupied."""
     pass
+
+class PaymentNotFoundError(PGManagerError):
+    """Raised when a payment doesn't exist, belongs to another property, or is
+    already voided (voided rows are not addressable for further voids)."""
+    pass

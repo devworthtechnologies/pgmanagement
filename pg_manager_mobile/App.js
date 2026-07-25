@@ -129,10 +129,33 @@ export default function App() {
         {/* CreateProperty stays registered for the whole authenticated session
             so a second PG can be added at any time — it used to be the ONLY
             screen when you had none, which is why there was no route to it
-            afterwards. initialRouteName decides where a session starts; note it
-            only applies on first mount, so the 0→1 transition no longer swaps
-            screens on its own and CreatePropertyScreen navigates explicitly. */}
+            afterwards.
+
+            `initialRouteName` below is NOT reactive. Read it as "where this
+            navigator starts", not "where the app should be right now": React
+            Navigation reads it once, when the navigator mounts, and changing it
+            later does nothing at all. That is what the `key` is for — flipping
+            it unmounts the old navigator and mounts a fresh one, which is the
+            only moment the expression is meaningful. Without the key, logging
+            in kept the navigator built during the logged-out phase and landed
+            every new signup on Main instead of CreateProperty.
+
+            The key deliberately tracks `user` ONLY, not properties.length.
+            Each transition then has exactly one mechanism and they don't race:
+              login/logout → key flips → remount → initialRouteName re-read
+              0 → 1 PG     → key steady → CreatePropertyScreen replace('Main')
+              1 → 2 PGs    → key steady → CreatePropertyScreen navigate('Main')
+            Adding an 'onboarding' phase to the key would flip it on 0→1, in the
+            same commit as that replace('Main') — dispatching navigation into a
+            navigator React is tearing down.
+
+            This relies on useStore setting `user` and `properties` in the SAME
+            set() call (it does — bootstrap/login/logout/setOnSessionExpired all
+            do). Split them and a fresh signup reads a stale empty-vs-populated
+            properties array at the instant the key flips, and lands on the
+            wrong screen again. */}
         <Stack.Navigator
+          key={user ? 'app' : 'guest'}
           screenOptions={{ headerShown: false }}
           initialRouteName={!user ? 'Login' : properties.length === 0 ? 'CreateProperty' : 'Main'}
         >

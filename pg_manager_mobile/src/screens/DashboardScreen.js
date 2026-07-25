@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -54,18 +54,39 @@ export default function DashboardScreen({ navigation }) {
 
   const currentMonth = monthKeyOf();
 
+  // Live mirror of the selection, readable from inside an in-flight request.
+  // A ref rather than a param threaded through load() so that EVERY call path
+  // is covered — focus, Retry, pull-to-refresh — with no way to call load()
+  // unguarded.
+  const selectedRef = useRef(currentPropertyId);
+  useEffect(() => {
+    selectedRef.current = currentPropertyId;
+  }, [currentPropertyId]);
+
   const load = useCallback(
     async ({ silent } = {}) => {
-      if (!currentPropertyId) return;
+      // Captured at request time — the selection can change while we're away.
+      const propertyId = currentPropertyId;
+      if (!propertyId) {
+        // No PG selected: resolve the spinner instead of leaving it turning
+        // forever on a screen that will never fetch anything.
+        setLoading(false);
+        return;
+      }
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const data = await statsApi.dashboard(currentPropertyId, currentMonth);
-        setLoaded({ propertyId: currentPropertyId, stats: data });
+        const data = await statsApi.dashboard(propertyId, currentMonth);
+        // A newer selection took over while this was in flight. Discard it —
+        // writing it would clobber the newer PG's data, and `loading` now
+        // belongs to that newer request, so don't touch it either.
+        if (selectedRef.current !== propertyId) return;
+        setLoaded({ propertyId, stats: data });
       } catch (err) {
+        if (selectedRef.current !== propertyId) return;
         setError(err instanceof ApiError ? err.message : 'Could not load dashboard.');
       } finally {
-        setLoading(false);
+        if (selectedRef.current === propertyId) setLoading(false);
       }
     },
     [currentPropertyId, currentMonth]
@@ -263,8 +284,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     fontSize: 12,
   },
-  pgPill: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%' },
-  pgName: { ...theme.typography.h1, textTransform: 'capitalize', flexShrink: 1 },
+  // No alignSelf/maxWidth: without a definite width the row gave flexShrink
+  // nothing sane to shrink against and RN-web collapsed the numberOfLines={1}
+  // Text early — "Alpha PG" rendered as "Alpha …". Filling headerText and
+  // giving the name flex:1 ellipsises at the real container edge instead.
+  pgPill: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pgName: { ...theme.typography.h1, textTransform: 'capitalize', flex: 1 },
   settingsButton: {
     width: 44,
     height: 44,

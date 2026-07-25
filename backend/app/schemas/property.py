@@ -38,6 +38,12 @@ class PropertyResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # The REQUESTING user's own role in this property (owner/manager/staff), so
+    # the client can gate manager-only actions. Deliberately only the caller's
+    # own role — other members' roles are not exposed here; that's what
+    # GET /properties/{id}/members is for.
+    my_role: str
+
     class Config:
         from_attributes = True
 

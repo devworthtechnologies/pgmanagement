@@ -27,6 +27,14 @@ from app.core.exceptions import LastOwnerError
 
 router = APIRouter()
 
+def serialize_property(prop, my_role: str) -> dict:
+    """PropertyResponse carries `my_role`, which isn't a column on the model —
+    it's the requesting user's own membership role. Same shape as
+    serialize_room() in the rooms router."""
+    data = {c.name: getattr(prop, c.name) for c in prop.__table__.columns}
+    data["my_role"] = my_role
+    return data
+
 @router.post("", response_model=PropertyResponse, status_code=status.HTTP_201_CREATED)
 async def create_property(
     request: PropertyCreateRequest,
@@ -46,7 +54,8 @@ async def create_property(
             currency=request.currency
         )
         await db.commit()
-        return prop
+        # create_property makes the caller the owner in the same transaction.
+        return serialize_property(prop, "owner")
     except Exception:
         await db.rollback()
         raise
@@ -54,9 +63,18 @@ async def create_property(
 @router.get("", response_model=list[PropertyResponse])
 async def get_properties(
     current_user: User = Depends(get_current_user),
-    property_repo: PropertyRepository = Depends(get_property_repo)
+    property_repo: PropertyRepository = Depends(get_property_repo),
+    member_repo: PropertyMemberRepository = Depends(get_property_member_repo)
 ):
-    return await property_repo.list_for_user(current_user.id)
+    properties = await property_repo.list_for_user(current_user.id)
+    # One extra query for all of the caller's memberships, rather than a lookup
+    # per property. list_for_user already filters to properties they're an
+    # active member of, so every row here has a matching membership.
+    role_by_property = {
+        m.property_id: m.role.value
+        for m in await member_repo.list_for_user(current_user.id)
+    }
+    return [serialize_property(p, role_by_property.get(p.id, "staff")) for p in properties]
 
 @router.get("/{property_id}", response_model=PropertyResponse)
 async def get_property(
@@ -67,8 +85,8 @@ async def get_property(
     prop = await property_repo.get_by_id(property_id)
     if not prop:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-        
-    return prop
+
+    return serialize_property(prop, member.role.value)
 
 @router.patch("/{property_id}", response_model=PropertyResponse)
 async def update_property(
@@ -83,8 +101,8 @@ async def update_property(
         prop = await property_repo.get_by_id(property_id)
         if not prop:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-        return prop
-        
+        return serialize_property(prop, member.role.value)
+
     update_data["updated_by"] = member.user_id
 
     try:
@@ -92,9 +110,9 @@ async def update_property(
         if not updated_prop:
             await db.rollback()
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-            
+
         await db.commit()
-        return updated_prop
+        return serialize_property(updated_prop, member.role.value)
     except Exception:
         await db.rollback()
         raise

@@ -55,10 +55,23 @@ def test_expired_token_raises_error():
 def test_tampered_signature_token_raises_error():
     user_id = uuid.uuid4()
     token = create_access_token(user_id)
-    
-    # Tamper with the token string
-    tampered_token = token[:-1] + ("a" if token[-1] != "a" else "b")
-    
+
+    # Tamper in the MIDDLE of the signature, never the last character. An
+    # HMAC-SHA256 signature is 32 bytes = 256 bits rendered as 43 base64url
+    # characters = 258 bits, so the final character carries only 4 significant
+    # bits and its low 2 are padding. Swapping it therefore decodes to the very
+    # same signature bytes about 6% of the time (measured: 127/2000), and the
+    # "tampered" token verifies fine — which made this test pass a forged token
+    # roughly one run in sixteen. Every other character is fully significant.
+    header, payload, signature = token.split(".")
+    mid = len(signature) // 2
+    tampered_signature = signature[:mid] + ("a" if signature[mid] != "a" else "b") + signature[mid + 1:]
+    tampered_token = f"{header}.{payload}.{tampered_signature}"
+
+    # Belt and braces: if the swap above ever produced the original string the
+    # test would be asserting nothing at all.
+    assert tampered_token != token
+
     with pytest.raises(InvalidTokenError, match="Invalid token signature"):
         decode_access_token(tampered_token)
 

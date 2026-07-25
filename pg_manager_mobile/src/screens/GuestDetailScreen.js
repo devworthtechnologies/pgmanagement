@@ -30,7 +30,11 @@ export default function GuestDetailScreen({ navigation, route }) {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    if (!currentPropertyId) return;
+    if (!currentPropertyId) {
+      // No PG selected: resolve the spinner rather than turning forever.
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

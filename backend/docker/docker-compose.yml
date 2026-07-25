@@ -1,5 +1,13 @@
 version: '3.8'
 
+# Declared top-level, not passed as `-p`, so no caller can forget it. Both
+# compose files live in this directory, so without an explicit name Compose
+# derives the project from the directory — "docker" — for BOTH of them. Since
+# `down -v` reaps everything carrying the project label rather than only what's
+# in the file you passed, running the test stack's teardown destroyed this
+# stack's postgres_data volume.
+name: pgmanager_dev
+
 services:
   api:
     build:

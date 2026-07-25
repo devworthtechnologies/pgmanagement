@@ -35,6 +35,21 @@ class Payment(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     idempotency_key: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # This is a money ledger, so it is append-only: a wrong payment is VOIDED and
+    # re-entered, never edited in place. `deleted_at` (from SoftDeleteMixin) is
+    # the void timestamp — there is deliberately no second timestamp column.
+    #
+    # Why it matters: a silently editable payment can't settle a dispute with a
+    # guest, and it lets someone collect cash, record it, then quietly reduce the
+    # figure and keep the difference. Voids are visible and attributed, so that
+    # pattern shows up in the history instead of vanishing.
+    voided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    void_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set on the REPLACEMENT row, pointing back at the row it supersedes.
+    corrects_payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payments.id", ondelete="SET NULL"), nullable=True
+    )
+
     __table_args__ = (
         CheckConstraint('amount > 0', name='chk_payments__amount_positive'),
         CheckConstraint("date_trunc('month', for_month) = for_month", name='chk_payments__for_month_first_day'),

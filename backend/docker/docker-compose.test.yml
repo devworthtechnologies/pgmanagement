@@ -1,5 +1,11 @@
 version: '3.8'
 
+# Keeps this stack in its own Compose project — see the note in
+# docker-compose.yml. conftest.py runs `down -v` against this file after every
+# pytest session; without a distinct name that teardown also wiped the dev
+# database out from under a running app.
+name: pgmanager_test
+
 services:
   postgres-test:
     image: postgres:16

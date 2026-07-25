@@ -7,7 +7,9 @@ import EmptyState from '../components/EmptyState';
 import FormField from '../components/FormField';
 import ModalShell from '../components/ModalShell';
 import PrimaryButton from '../components/PrimaryButton';
+import { confirm } from '../lib/confirm';
 import { formatINR, initialsOf } from '../lib/format';
+import { describeAmountAnomaly } from '../lib/paymentSanity';
 import { monthKeyOf, monthKeyToDate, monthLabel, prevMonthKey } from '../lib/rent';
 import { uuidv4 } from '../lib/uuid';
 import { ApiError, guestsApi, paymentsApi, statsApi } from '../lib/api';
@@ -23,23 +25,38 @@ const METHODS = [
 ];
 
 export default function RecordPaymentModal({ navigation, route }) {
-  const preselectedGuestId = route.params?.guestId;
   const currentPropertyId = useStore((s) => s.currentPropertyId);
+
+  // Correction mode: the payment being replaced is passed through so we can
+  // prefill from it without needing a GET /payments/{id} endpoint. The old row
+  // gets voided server-side as part of the /correct call.
+  const correctsPaymentId = route.params?.correctsPaymentId ?? null;
+  const correctsPayment = route.params?.correctsPayment ?? null;
+  const isCorrection = !!correctsPaymentId;
+
+  const preselectedGuestId = correctsPayment?.guest_id ?? route.params?.guestId;
 
   const currentMonth = monthKeyOf();
   const lastMonth = prevMonthKey(currentMonth);
+  // The month the original payment was for, if it isn't one of the two chips —
+  // you're correcting THAT month, so it has to be selectable.
+  const originalMonth = correctsPayment ? String(correctsPayment.for_month).slice(0, 7) : null;
+  const extraMonth =
+    originalMonth && originalMonth !== currentMonth && originalMonth !== lastMonth ? originalMonth : null;
 
   const [activeGuests, setActiveGuests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
-  const [forMonth, setForMonth] = useState(currentMonth);
+  const [forMonth, setForMonth] = useState(originalMonth ?? currentMonth);
   const [dueByGuestId, setDueByGuestId] = useState({});
   const [dueLoading, setDueLoading] = useState(false);
 
   const [selectedGuestId, setSelectedGuestId] = useState(preselectedGuestId ?? null);
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState('upi');
+  const [amount, setAmount] = useState(
+    correctsPayment ? String(Number(correctsPayment.amount)) : ''
+  );
+  const [method, setMethod] = useState(correctsPayment?.method ?? 'upi');
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -83,11 +100,12 @@ export default function RecordPaymentModal({ navigation, route }) {
 
   // Prefill the amount once we know the selected guest's due balance for
   // the currently chosen month (skipped if the user already typed a value).
+  // Not in correction mode — there the amount is prefilled from the original.
   useEffect(() => {
-    if (!selectedGuestId || dueLoading) return;
+    if (isCorrection || !selectedGuestId || dueLoading) return;
     const due = dueByGuestId[selectedGuestId];
     if (due > 0) setAmount((prev) => (prev === '' ? String(due) : prev));
-  }, [selectedGuestId, dueByGuestId, dueLoading]);
+  }, [isCorrection, selectedGuestId, dueByGuestId, dueLoading]);
 
   const selectedGuest = activeGuests.find((g) => g.id === selectedGuestId) || null;
 
@@ -95,14 +113,46 @@ export default function RecordPaymentModal({ navigation, route }) {
 
   const selectGuest = (guest) => {
     setSelectedGuestId(guest.id);
-    const due = dueByGuestId[guest.id];
-    setAmount(due > 0 ? String(due) : '');
+    // Correcting: the amount came from the original payment, don't overwrite it.
+    if (!isCorrection) {
+      const due = dueByGuestId[guest.id];
+      setAmount(due > 0 ? String(due) : '');
+    }
     clearError('guest');
   };
 
   const selectMonth = (month) => {
     setForMonth(month);
-    setAmount('');
+    if (!isCorrection) setAmount('');
+  };
+
+  const submit = async (value) => {
+    setSaving(true);
+    setFormError(null);
+    try {
+      const payload = {
+        guest_id: selectedGuest.id,
+        amount: value,
+        method,
+        for_month: monthKeyToDate(forMonth),
+        // Fresh key every submit, including corrections — the replacement is a
+        // new ledger row, not a retry of the one being voided.
+        idempotency_key: uuidv4(),
+      };
+      if (isCorrection) {
+        await paymentsApi.correct(currentPropertyId, correctsPaymentId, {
+          ...payload,
+          reason: `Corrected from ${formatINR(correctsPayment?.amount ?? 0)}`,
+        });
+      } else {
+        await paymentsApi.create(currentPropertyId, payload);
+      }
+      navigation.goBack();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Could not save payment.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -113,39 +163,38 @@ export default function RecordPaymentModal({ navigation, route }) {
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
-    setSaving(true);
-    setFormError(null);
-    try {
-      await paymentsApi.create(currentPropertyId, {
-        guest_id: selectedGuest.id,
-        amount: value,
-        method,
-        for_month: monthKeyToDate(forMonth),
-        idempotency_key: uuidv4(),
+    // Fat-finger guard. Confirms rather than blocks — advances, deposits, part
+    // payments and settling several months at once are all legitimate and all
+    // land outside the band.
+    const anomaly = describeAmountAnomaly(value, selectedGuest.monthly_rent, selectedGuest.full_name);
+    if (anomaly) {
+      confirm({
+        title: 'Does that amount look right?',
+        message: anomaly,
+        confirmLabel: 'Record anyway',
+        onConfirm: () => submit(value),
       });
-      navigation.goBack();
-    } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save payment.');
-    } finally {
-      setSaving(false);
+      return;
     }
+
+    await submit(value);
   };
 
   if (loading) {
     return (
-      <ModalShell title="Record payment">
+      <ModalShell title={isCorrection ? 'Correct payment' : 'Record payment'}>
         <ActivityIndicator color={theme.colors.primary} />
       </ModalShell>
     );
   }
 
   if (loadError) {
-    return <ModalShell title="Record payment" error={loadError} />;
+    return <ModalShell title={isCorrection ? 'Correct payment' : 'Record payment'} error={loadError} />;
   }
 
   if (activeGuests.length === 0) {
     return (
-      <ModalShell title="Record payment">
+      <ModalShell title={isCorrection ? 'Correct payment' : 'Record payment'}>
         <EmptyState
           icon={UserPlus}
           title="No active guests"
@@ -171,7 +220,7 @@ export default function RecordPaymentModal({ navigation, route }) {
             </Text>
           )}
           <PrimaryButton
-            title={saving ? 'Saving…' : 'Save payment'}
+            title={saving ? 'Saving…' : isCorrection ? 'Void old & save correction' : 'Save payment'}
             onPress={handleSave}
             disabled={saving}
             testID="payment-save"
@@ -179,6 +228,15 @@ export default function RecordPaymentModal({ navigation, route }) {
         </>
       }
     >
+      {isCorrection && (
+        <View style={styles.correctionNotice} testID="correction-notice">
+          <Text style={styles.correctionText}>
+            Correcting a payment of {formatINR(correctsPayment?.amount ?? 0)}. The original stays in
+            the ledger marked as voided — it isn&apos;t edited or deleted.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.group}>
         <Text style={styles.label}>Guest</Text>
         {activeGuests.map((guest) => {
@@ -233,6 +291,14 @@ export default function RecordPaymentModal({ navigation, route }) {
             onPress={() => selectMonth(lastMonth)}
             testID="month-chip-last"
           />
+          {!!extraMonth && (
+            <Chip
+              label={monthLabel(extraMonth)}
+              selected={forMonth === extraMonth}
+              onPress={() => selectMonth(extraMonth)}
+              testID="month-chip-original"
+            />
+          )}
         </View>
       </View>
 
@@ -314,4 +380,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: theme.spacing.md,
   },
+  correctionNotice: {
+    backgroundColor: theme.colors.warning + '15',
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  correctionText: { ...theme.typography.caption, lineHeight: 18 },
 });

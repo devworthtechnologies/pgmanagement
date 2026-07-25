@@ -68,14 +68,22 @@ async def test_payment_repository_crud(db_session: AsyncSession):
     assert fetched_by_idemp is not None
     assert fetched_by_idemp.id == payment.id
     
-    # 4. Soft Delete
-    await repo.soft_delete(payment.id)
-    
-    # 5. Confirm Get ignores soft deleted
-    deleted = await repo.get_by_id(payment.id)
-    assert deleted is None
-    deleted_idemp = await repo.get_by_idempotency_key(prop_id, idemp_key)
-    assert deleted_idemp is None
+    # 4. Void (deleted_at doubles as the void timestamp)
+    await repo.void(payment.id, voided_by=None, void_reason="wrong amount")
+
+    # 5. Confirm Get ignores voided rows
+    voided = await repo.get_by_id(payment.id)
+    assert voided is None
+    voided_idemp = await repo.get_by_idempotency_key(prop_id, idemp_key)
+    assert voided_idemp is None
+
+    # 6. ...but the row is still there, with the void attributed
+    rows = await repo.list_by_property(prop_id, include_voided=True)
+    match = next(p for p in rows if p.id == payment.id)
+    assert match.deleted_at is not None
+    assert match.void_reason == "wrong amount"
+    # and excluded from the default listing that all the money math uses
+    assert payment.id not in {p.id for p in await repo.list_by_property(prop_id)}
 
 @pytest.mark.asyncio
 async def test_payment_repository_list_filters(db_session: AsyncSession):

@@ -227,13 +227,26 @@ export const guestsApi = {
 };
 
 // ── Payments ──────────────────────────────────────────────
+// Payments are an append-only ledger: there is no delete and no edit. A wrong
+// payment is VOIDED (row kept, marked, attributed) and optionally replaced via
+// `correct`, which does both halves in one transaction server-side. Both
+// require manager role. `filters.include_voided` surfaces voided rows for
+// history display only — never sum them.
 export const paymentsApi = {
   list: (propertyId, filters) =>
     rawRequest(`/api/v1/properties/${propertyId}/payments${buildQuery(filters)}`),
   create: (propertyId, payload) =>
     rawRequest(`/api/v1/properties/${propertyId}/payments`, { method: 'POST', body: payload }),
-  remove: (propertyId, paymentId) =>
-    rawRequest(`/api/v1/properties/${propertyId}/payments/${paymentId}`, { method: 'DELETE' }),
+  void: (propertyId, paymentId, reason) =>
+    rawRequest(`/api/v1/properties/${propertyId}/payments/${paymentId}/void`, {
+      method: 'POST',
+      body: { reason: reason ?? null },
+    }),
+  correct: (propertyId, paymentId, payload) =>
+    rawRequest(`/api/v1/properties/${propertyId}/payments/${paymentId}/correct`, {
+      method: 'POST',
+      body: payload,
+    }),
 };
 
 // ── Stats ─────────────────────────────────────────────────

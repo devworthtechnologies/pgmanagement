@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,20 +25,39 @@ export default function RoomsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Live mirror of the selection, readable from inside an in-flight request.
+  // A ref rather than a param threaded through load() so that EVERY call path
+  // is covered — focus and Retry alike — with no way to call load() unguarded.
+  const selectedRef = useRef(currentPropertyId);
+  useEffect(() => {
+    selectedRef.current = currentPropertyId;
+  }, [currentPropertyId]);
+
   const load = useCallback(async () => {
-    if (!currentPropertyId) return;
+    // Captured at request time — the selection can change while we're away.
+    const propertyId = currentPropertyId;
+    if (!propertyId) {
+      // No PG selected: resolve the spinner rather than turning forever.
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const [roomList, guestList] = await Promise.all([
-        roomsApi.list(currentPropertyId),
-        guestsApi.list(currentPropertyId, { active: true }),
+        roomsApi.list(propertyId),
+        guestsApi.list(propertyId, { active: true }),
       ]);
-      setLoaded({ propertyId: currentPropertyId, rooms: roomList, guests: guestList });
+      // A newer selection took over while this was in flight. Discard it —
+      // writing it would clobber the newer PG's rows, and `loading` now
+      // belongs to that newer request, so don't touch it either.
+      if (selectedRef.current !== propertyId) return;
+      setLoaded({ propertyId, rooms: roomList, guests: guestList });
     } catch (err) {
+      if (selectedRef.current !== propertyId) return;
       setError(err instanceof ApiError ? err.message : 'Could not load rooms.');
     } finally {
-      setLoading(false);
+      if (selectedRef.current === propertyId) setLoading(false);
     }
   }, [currentPropertyId]);
 

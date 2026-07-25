@@ -23,6 +23,15 @@ class PropertyMemberRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_for_user(self, user_id: uuid.UUID, active_only: bool = True) -> list[PropertyMember]:
+        """Every membership this user holds — used to attach the caller's own
+        role to each property in a list response without an N+1 lookup."""
+        stmt = select(PropertyMember).where(PropertyMember.user_id == user_id)
+        if active_only:
+            stmt = stmt.where(PropertyMember.is_active == True)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_by_property(self, property_id: uuid.UUID, active_only: bool = True) -> list[PropertyMember]:
         stmt = select(PropertyMember).where(PropertyMember.property_id == property_id)
         if active_only:
