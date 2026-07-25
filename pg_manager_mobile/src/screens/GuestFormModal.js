@@ -8,10 +8,71 @@ import FormField from '../components/FormField';
 import ModalShell from '../components/ModalShell';
 import PrimaryButton from '../components/PrimaryButton';
 import { ApiError, guestsApi, roomsApi } from '../lib/api';
+import { firstOfThisMonthISO, formatIsoToDdMmYyyy, parseDdMmYyyy, todayLocalISO } from '../lib/date';
+import { perGuestRent } from '../lib/rent';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme/theme';
 
 const PHONE_RE = /^[+\d][\d\s-]{6,15}$/;
+const MIN_JOIN_ISO = '2000-01-01';
+
+// Auto-inserts the DD/MM/YYYY separators as digits are typed. The slash is only
+// added once a digit follows it, so backspace deletes straight through instead
+// of getting stuck re-adding a trailing "/".
+function maskDdMmYyyy(text) {
+  const digits = String(text).replace(/\D/g, '').slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)]
+    .filter((part) => part.length > 0)
+    .join('/');
+}
+
+// Exported only so it can be unit tested — the payload shape is where the
+// Aadhaar-wipe bug lived, and it can't be exercised through the component
+// without mounting the whole screen.
+export function buildGuestPayload({
+  roomId,
+  fullName,
+  phone,
+  monthlyRent,
+  guestType,
+  advancePaid,
+  food,
+  foodType,
+  stayDuration,
+  stayUnit,
+  aadharNumber,
+  permanentAddress,
+  joinedIso,
+}) {
+  const payload = {
+    room_id: roomId,
+    full_name: fullName.trim(),
+    phone: phone.trim(),
+    monthly_rent: Number(monthlyRent),
+    guest_type: guestType,
+    advance_paid: advancePaid.trim() ? Number(advancePaid) : null,
+    has_food: food,
+    food_type: food ? foodType : null,
+    stay_duration: stayDuration ? Number(stayDuration) : null,
+    stay_unit: stayDuration ? stayUnit : null,
+    permanent_address: permanentAddress.trim() || null,
+    joined_at: joinedIso,
+  };
+
+  // The key is present ONLY when there's a real value to send. A blank field
+  // means "leave what's on file alone" — and the edit form always starts blank,
+  // because the server never sends the number back. Sending an explicit null
+  // instead tells the backend to CLEAR the stored Aadhaar, which is what
+  // destroyed the ID on file on every single guest edit. `exclude_unset` can't
+  // save us there: an explicit null IS set as far as Pydantic is concerned.
+  //
+  // The backend's null-clears-it behaviour is correct and still reachable —
+  // there just isn't any UI today that asks to clear an Aadhaar.
+  const aadhar = aadharNumber.trim();
+  if (aadhar) payload.aadhar_number = aadhar;
+
+  return payload;
+}
 
 export default function GuestFormModal({ navigation, route }) {
   const guestId = route.params?.guestId;
@@ -46,12 +107,17 @@ export default function GuestFormModal({ navigation, route }) {
   const [phone, setPhone] = useState('');
   const [roomId, setRoomId] = useState(null);
   const [monthlyRent, setMonthlyRent] = useState('');
+  // Once staff type in the rent field themselves, picking a different room
+  // must not overwrite what they typed.
+  const [rentTouched, setRentTouched] = useState(false);
   const [aadharNumber, setAadharNumber] = useState('');
   const [permanentAddress, setPermanentAddress] = useState('');
   const [guestType, setGuestType] = useState('permanent');
   const [stayDuration, setStayDuration] = useState('');
   const [stayUnit, setStayUnit] = useState('months');
   const [advancePaid, setAdvancePaid] = useState('');
+  // DD/MM/YYYY display string; converted to ISO only on save.
+  const [joinDate, setJoinDate] = useState(formatIsoToDdMmYyyy(todayLocalISO()));
   const [food, setFood] = useState(false);
   const [foodType, setFoodType] = useState('veg');
 
@@ -70,6 +136,7 @@ export default function GuestFormModal({ navigation, route }) {
     setStayDuration(editingGuest.stay_duration ? String(editingGuest.stay_duration) : '');
     setStayUnit(editingGuest.stay_unit || 'months');
     setAdvancePaid(editingGuest.advance_paid != null ? String(editingGuest.advance_paid) : '');
+    setJoinDate(formatIsoToDdMmYyyy(editingGuest.joined_at));
     setFood(!!editingGuest.has_food);
     setFoodType(editingGuest.food_type || 'veg');
     // aadhar_number is write-only server-side (only aadhar_last4 comes back)
@@ -92,6 +159,18 @@ export default function GuestFormModal({ navigation, route }) {
 
   const clearError = (key) => setErrors((e) => (e[key] ? { ...e, [key]: null } : e));
 
+  const selectRoom = (room) => {
+    setRoomId(room.id);
+    clearError('room');
+
+    // Prefill the guest's share of the room's rent — only when creating, only
+    // if staff haven't typed a rent themselves, and only if the room actually
+    // has a default set (otherwise leave whatever's there alone, don't clear).
+    if (editingGuest || rentTouched) return;
+    const share = perGuestRent(room.default_rent, room.capacity);
+    if (share != null) setMonthlyRent(String(share));
+  };
+
   const handleSave = async () => {
     const next = {};
     if (!fullName.trim()) next.fullName = 'Full name is required.';
@@ -102,36 +181,45 @@ export default function GuestFormModal({ navigation, route }) {
     if (advancePaid.trim() && (!Number.isFinite(Number(advancePaid)) || Number(advancePaid) < 0)) {
       next.advancePaid = 'Enter a valid amount.';
     }
+
+    const joinedIso = parseDdMmYyyy(joinDate);
+    if (!joinDate.trim()) {
+      next.joinDate = 'Joining date is required.';
+    } else if (!joinedIso) {
+      next.joinDate = 'Use DD/MM/YYYY, e.g. 05/07/2026.';
+    } else if (joinedIso > todayLocalISO()) {
+      // ISO strings compare correctly as strings — no Date needed.
+      next.joinDate = 'Join date cannot be in the future.';
+    } else if (joinedIso < MIN_JOIN_ISO) {
+      next.joinDate = 'Join date is too far in the past.';
+    }
+
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
-    const basePayload = {
-      room_id: roomId,
-      full_name: fullName.trim(),
-      phone: phone.trim(),
-      monthly_rent: rent,
-      guest_type: guestType,
-      advance_paid: advancePaid.trim() ? Number(advancePaid) : null,
-      has_food: food,
-      food_type: food ? foodType : null,
-      stay_duration: stayDuration ? Number(stayDuration) : null,
-      stay_unit: stayDuration ? stayUnit : null,
-      aadhar_number: aadharNumber.trim() || null,
-      permanent_address: permanentAddress.trim() || null,
-    };
+    const basePayload = buildGuestPayload({
+      roomId,
+      fullName,
+      phone,
+      monthlyRent,
+      guestType,
+      advancePaid,
+      food,
+      foodType,
+      stayDuration,
+      stayUnit,
+      aadharNumber,
+      permanentAddress,
+      joinedIso,
+    });
 
     setSaving(true);
     setFormError(null);
     try {
       if (editingGuest) {
-        // GuestUpdateRequest has no joined_at field — join date can't be
-        // changed after creation.
         await guestsApi.update(currentPropertyId, editingGuest.id, basePayload);
       } else {
-        await guestsApi.create(currentPropertyId, {
-          ...basePayload,
-          joined_at: new Date().toISOString().slice(0, 10),
-        });
+        await guestsApi.create(currentPropertyId, basePayload);
       }
       navigation.goBack();
     } catch (err) {
@@ -213,7 +301,7 @@ export default function GuestFormModal({ navigation, route }) {
                 label={isCurrent ? `${room.room_number} · current` : `${room.room_number} · ${free} free`}
                 selected={roomId === room.id}
                 disabled={disabled}
-                onPress={() => { setRoomId(room.id); clearError('room'); }}
+                onPress={() => selectRoom(room)}
                 testID={`room-chip-${room.room_number}`}
               />
             );
@@ -225,7 +313,7 @@ export default function GuestFormModal({ navigation, route }) {
       <FormField
         label="Monthly rent (₹)"
         value={monthlyRent}
-        onChangeText={(v) => { setMonthlyRent(v); clearError('monthlyRent'); }}
+        onChangeText={(v) => { setMonthlyRent(v); setRentTouched(true); clearError('monthlyRent'); }}
         keyboardType="numeric"
         placeholder="e.g. 8500"
         error={errors.monthlyRent}
@@ -241,6 +329,30 @@ export default function GuestFormModal({ navigation, route }) {
         error={errors.advancePaid}
         testID="guest-advance-input"
       />
+
+      <FormField
+        label="Joining date"
+        value={joinDate}
+        onChangeText={(v) => { setJoinDate(maskDdMmYyyy(v)); clearError('joinDate'); }}
+        keyboardType="numeric"
+        placeholder="DD/MM/YYYY"
+        error={errors.joinDate}
+        testID="guest-joined-input"
+      />
+      <View style={styles.dateChips}>
+        <Chip
+          label="Today"
+          selected={joinDate === formatIsoToDdMmYyyy(todayLocalISO())}
+          onPress={() => { setJoinDate(formatIsoToDdMmYyyy(todayLocalISO())); clearError('joinDate'); }}
+          testID="join-date-today"
+        />
+        <Chip
+          label="1st of this month"
+          selected={joinDate === formatIsoToDdMmYyyy(firstOfThisMonthISO())}
+          onPress={() => { setJoinDate(formatIsoToDdMmYyyy(firstOfThisMonthISO())); clearError('joinDate'); }}
+          testID="join-date-month-start"
+        />
+      </View>
 
       <FormField
         label={editingGuest ? 'Aadhar Number (leave blank to keep unchanged)' : 'Aadhar Number'}
@@ -331,6 +443,13 @@ const styles = StyleSheet.create({
   },
   roomChips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   chipError: { ...theme.typography.caption, color: theme.colors.error, marginTop: 6 },
+  dateChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginTop: -theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
+  },
 
   addressGroup: { marginBottom: theme.spacing.lg },
   addressInput: {

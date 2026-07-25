@@ -6,6 +6,7 @@ import {
   Bed,
   Building2,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   IndianRupee,
   Settings,
@@ -47,7 +48,7 @@ export default function DashboardScreen({ navigation }) {
   const currentPropertyId = useStore((s) => s.currentPropertyId);
   const property = properties.find((p) => p.id === currentPropertyId);
 
-  const [stats, setStats] = useState(null);
+  const [loaded, setLoaded] = useState({ propertyId: null, stats: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -60,7 +61,7 @@ export default function DashboardScreen({ navigation }) {
       setError(null);
       try {
         const data = await statsApi.dashboard(currentPropertyId, currentMonth);
-        setStats(data);
+        setLoaded({ propertyId: currentPropertyId, stats: data });
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Could not load dashboard.');
       } finally {
@@ -76,7 +77,19 @@ export default function DashboardScreen({ navigation }) {
     }, [load])
   );
 
+  // Switching PGs flips currentPropertyId instantly while the fetch for the new
+  // one is still in flight — so whatever is in state right then belongs to the
+  // PG we just left. Tagging the payload with the property it came from means
+  // the other PG's numbers can't render at all, rather than showing until the
+  // refetch happens to win the race.
+  const awaitingProperty = loaded.propertyId !== currentPropertyId;
+  const stats = awaitingProperty ? null : loaded.stats;
   const hasData = !!stats && (stats.total_rooms > 0 || stats.active_guests > 0);
+  // `awaitingProperty` is also part of the spinner condition, not just `loading`
+  // — between the store updating and load() firing there's a render where
+  // loading is still false, and without this it flashes the "Set up your PG"
+  // empty state at someone who already has rooms.
+  const showSpinner = (loading || awaitingProperty) && !stats;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -88,9 +101,23 @@ export default function DashboardScreen({ navigation }) {
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.greeting}>Hello, {user?.full_name || ''}</Text>
-            <Text style={styles.pgName} numberOfLines={1}>
-              {property?.name || ''}
-            </Text>
+            {/* The PG name was already the header's title — making it tappable
+                turns it into the switcher entry point without moving anything.
+                Shown with one PG too, since this is also the route to adding
+                a second. */}
+            <TouchableOpacity
+              style={styles.pgPill}
+              onPress={() => navigation.navigate('PropertyPicker')}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Current PG: ${property?.name || 'none'}. Switch or add a PG`}
+              testID="open-property-picker"
+            >
+              <Text style={styles.pgName} numberOfLines={1}>
+                {property?.name || ''}
+              </Text>
+              <ChevronDown color={theme.colors.textSecondary} size={20} strokeWidth={2.5} />
+            </TouchableOpacity>
           </View>
           <TouchableOpacity
             style={styles.settingsButton}
@@ -103,7 +130,7 @@ export default function DashboardScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {loading && !stats ? (
+        {showSpinner ? (
           <ActivityIndicator style={styles.loading} color={theme.colors.primary} />
         ) : error && !stats ? (
           <EmptyState icon={Building2} title="Couldn't load dashboard" message={error} actionLabel="Retry" onAction={load} />
@@ -236,7 +263,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     fontSize: 12,
   },
-  pgName: { ...theme.typography.h1, textTransform: 'capitalize' },
+  pgPill: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%' },
+  pgName: { ...theme.typography.h1, textTransform: 'capitalize', flexShrink: 1 },
   settingsButton: {
     width: 44,
     height: 44,

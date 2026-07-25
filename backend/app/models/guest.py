@@ -73,4 +73,5 @@ class Guest(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         CheckConstraint('monthly_rent >= 0', name='chk_guests__monthly_rent'),
         CheckConstraint('advance_paid IS NULL OR advance_paid >= 0', name='chk_guests__advance_paid'),
         CheckConstraint('active = true OR moved_out_at IS NOT NULL', name='chk_guests__active_moved_out'),
+        CheckConstraint('moved_out_at IS NULL OR moved_out_at >= joined_at', name='chk_guests__moved_out_after_joined'),
     )

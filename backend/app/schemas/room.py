@@ -11,6 +11,7 @@ class RoomCreateRequest(BaseModel):
     capacity: int = Field(..., ge=1, le=20)
     is_ac: bool = False
     advance_details: float | None = None
+    default_rent: float | None = Field(None, ge=0)
 
 class RoomUpdateRequest(BaseModel):
     room_number: str | None = Field(None, max_length=20)
@@ -19,6 +20,7 @@ class RoomUpdateRequest(BaseModel):
     capacity: int | None = Field(None, ge=1, le=20)
     is_ac: bool | None = None
     advance_details: float | None = None
+    default_rent: float | None = Field(None, ge=0)
     is_active: bool | None = None
 
 class RoomResponse(BaseModel):
@@ -30,6 +32,7 @@ class RoomResponse(BaseModel):
     capacity: int
     is_ac: bool
     advance_details: float | None
+    default_rent: float | None
     is_active: bool
     
     occupied_beds: int

@@ -24,6 +24,7 @@ import GuestFormModal from './src/screens/GuestFormModal';
 import GuestsScreen from './src/screens/GuestsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import PaymentsScreen from './src/screens/PaymentsScreen';
+import PropertyPickerModal from './src/screens/PropertyPickerModal';
 import RecordPaymentModal from './src/screens/RecordPaymentModal';
 import RegisterScreen from './src/screens/RegisterScreen';
 import RoomFormModal from './src/screens/RoomFormModal';
@@ -125,23 +126,32 @@ export default function App() {
     <SafeAreaProvider onLayout={onLayoutRootView}>
       <StatusBar style="dark" />
       <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {/* CreateProperty stays registered for the whole authenticated session
+            so a second PG can be added at any time — it used to be the ONLY
+            screen when you had none, which is why there was no route to it
+            afterwards. initialRouteName decides where a session starts; note it
+            only applies on first mount, so the 0→1 transition no longer swaps
+            screens on its own and CreatePropertyScreen navigates explicitly. */}
+        <Stack.Navigator
+          screenOptions={{ headerShown: false }}
+          initialRouteName={!user ? 'Login' : properties.length === 0 ? 'CreateProperty' : 'Main'}
+        >
           {!user ? (
             <>
               <Stack.Screen name="Login" component={LoginScreen} />
               <Stack.Screen name="Register" component={RegisterScreen} />
             </>
-          ) : properties.length === 0 ? (
-            <Stack.Screen name="CreateProperty" component={CreatePropertyScreen} />
           ) : (
             <>
               <Stack.Screen name="Main" component={MainTabs} />
+              <Stack.Screen name="CreateProperty" component={CreatePropertyScreen} />
               <Stack.Screen name="GuestDetail" component={GuestDetailScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
               <Stack.Group screenOptions={{ presentation: 'modal' }}>
                 <Stack.Screen name="GuestForm" component={GuestFormModal} />
                 <Stack.Screen name="RoomForm" component={RoomFormModal} />
                 <Stack.Screen name="RecordPayment" component={RecordPaymentModal} />
+                <Stack.Screen name="PropertyPicker" component={PropertyPickerModal} />
               </Stack.Group>
             </>
           )}

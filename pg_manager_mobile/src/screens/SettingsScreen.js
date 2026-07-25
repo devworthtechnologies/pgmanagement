@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Check, LogOut } from 'lucide-react-native';
+import { ChevronRight, LogOut } from 'lucide-react-native';
 
 import BackHeader from '../components/BackHeader';
 import FormField from '../components/FormField';
@@ -12,18 +12,27 @@ import { theme } from '../theme/theme';
 
 const APP_VERSION = require('../../package.json').version;
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }) {
   const user = useStore((s) => s.user);
   const properties = useStore((s) => s.properties);
   const currentPropertyId = useStore((s) => s.currentPropertyId);
   const updateCurrentProperty = useStore((s) => s.updateCurrentProperty);
-  const selectProperty = useStore((s) => s.selectProperty);
   const logout = useStore((s) => s.logout);
 
   const property = properties.find((p) => p.id === currentPropertyId);
   const [name, setName] = useState(property?.name ?? '');
+  const [nameFor, setNameFor] = useState(currentPropertyId);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // Switching PGs now happens in a modal on top of this screen, so this field
+  // has to re-point itself at the new property when we come back. Without it,
+  // "Save changes" would rename the PG you just switched TO using the name of
+  // the one you switched FROM.
+  if (nameFor !== currentPropertyId) {
+    setNameFor(currentPropertyId);
+    setName(property?.name ?? '');
+  }
 
   const dirty = name.trim() !== (property?.name ?? '');
 
@@ -77,27 +86,25 @@ export default function SettingsScreen() {
             testID="settings-save"
           />
 
-          {properties.length > 1 && (
-            <>
-              <Text style={styles.sectionTitle}>Switch property</Text>
-              <View style={styles.propertyList}>
-                {properties.map((p) => (
-                  <TouchableOpacity
-                    key={p.id}
-                    style={styles.propertyRow}
-                    onPress={() => {
-                      selectProperty(p.id);
-                      setName(p.name);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.propertyName}>{p.name}</Text>
-                    {p.id === currentPropertyId && <Check color={theme.colors.primary} size={18} strokeWidth={2.5} />}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
+          {/* One switcher, in PropertyPickerModal — this is a door to it, not a
+              second copy of it. Always shown, even with a single PG, because
+              it's also the way to add another. */}
+          <Text style={styles.sectionTitle}>Your PGs</Text>
+          <View style={styles.propertyList}>
+            <TouchableOpacity
+              style={styles.propertyRow}
+              onPress={() => navigation.navigate('PropertyPicker')}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Switch or add a PG"
+              testID="settings-open-property-picker"
+            >
+              <Text style={styles.propertyName}>
+                {properties.length === 1 ? 'Switch or add a PG' : `Switch between ${properties.length} PGs`}
+              </Text>
+              <ChevronRight color={theme.colors.textTertiary} size={18} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.8} testID="settings-logout">
             <LogOut color={theme.colors.error} size={18} strokeWidth={2.2} />
@@ -138,8 +145,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   propertyName: { ...theme.typography.body, fontFamily: 'PlusJakartaSans_600SemiBold' },
   logoutButton: {

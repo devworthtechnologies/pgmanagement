@@ -23,12 +23,20 @@ const FILTERS = [
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
+// Stable identities so the memos below don't recompute on every render while a
+// property switch is in flight.
+const EMPTY = [];
+const EMPTY_MAP = {};
+
 export default function GuestsScreen({ navigation }) {
   const currentPropertyId = useStore((s) => s.currentPropertyId);
 
-  const [guests, setGuests] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [dueByGuestId, setDueByGuestId] = useState({});
+  const [loaded, setLoaded] = useState({
+    propertyId: null,
+    guests: EMPTY,
+    rooms: EMPTY,
+    dueByGuestId: EMPTY_MAP,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
@@ -44,11 +52,14 @@ export default function GuestsScreen({ navigation }) {
         roomsApi.list(currentPropertyId),
         statsApi.dashboard(currentPropertyId, monthKeyOf()),
       ]);
-      setGuests(guestList);
-      setRooms(roomList);
       const dueMap = {};
       for (const entry of stats.due_guests) dueMap[entry.guest_id] = entry.balance;
-      setDueByGuestId(dueMap);
+      setLoaded({
+        propertyId: currentPropertyId,
+        guests: guestList,
+        rooms: roomList,
+        dueByGuestId: dueMap,
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load guests.');
     } finally {
@@ -61,6 +72,14 @@ export default function GuestsScreen({ navigation }) {
       load();
     }, [load])
   );
+
+  // Rows are only rendered when they came from the PG currently selected. On a
+  // switch, currentPropertyId changes before the new fetch lands, and without
+  // this the previous PG's guests stay on screen until it does.
+  const awaitingProperty = loaded.propertyId !== currentPropertyId;
+  const guests = awaitingProperty ? EMPTY : loaded.guests;
+  const rooms = awaitingProperty ? EMPTY : loaded.rooms;
+  const dueByGuestId = awaitingProperty ? EMPTY_MAP : loaded.dueByGuestId;
 
   const roomNumberById = useMemo(() => {
     const map = new Map();
@@ -192,7 +211,7 @@ export default function GuestsScreen({ navigation }) {
         ))}
       </View>
 
-      {loading && guests.length === 0 ? (
+      {(loading || awaitingProperty) && guests.length === 0 ? (
         <ActivityIndicator style={styles.loading} color={theme.colors.primary} />
       ) : (
         <FlatList

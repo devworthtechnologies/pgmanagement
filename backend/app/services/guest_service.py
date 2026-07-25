@@ -12,6 +12,10 @@ from app.core.exceptions import RoomFullError
 # Matches the frontend validator: ^[+\d][\d\s-]{6,15}$
 PHONE_REGEX = re.compile(r"^[+\d][\d\s-]{6,15}$")
 
+# Staff type join dates by hand, so a fat-fingered year is the realistic error.
+# Anything before this is a typo, not a real PG tenancy.
+MIN_JOINED_AT = date(2000, 1, 1)
+
 class GuestService:
     def __init__(self, guest_repo: GuestRepository, room_repo: RoomRepository):
         self.guest_repo = guest_repo
@@ -25,6 +29,14 @@ class GuestService:
         if monthly_rent is not None:
             if monthly_rent < 0:
                 raise ValueError("monthly_rent: Monthly rent cannot be negative.")
+
+    def _validate_joined_at(self, joined_at: date) -> None:
+        if joined_at is None:
+            raise ValueError("joined_at: Join date is required.")
+        if joined_at > datetime.now(timezone.utc).date():
+            raise ValueError("joined_at: Join date cannot be in the future.")
+        if joined_at < MIN_JOINED_AT:
+            raise ValueError("joined_at: Join date is too far in the past.")
 
     async def add_guest(
         self,
@@ -46,7 +58,8 @@ class GuestService:
         created_by: uuid.UUID | None = None
     ) -> Guest:
         self._validate_guest_data(phone, monthly_rent)
-        
+        self._validate_joined_at(joined_at)
+
         if advance_paid is not None and advance_paid < 0:
              raise ValueError("advance_paid: Advance paid cannot be negative.")
 
@@ -99,6 +112,9 @@ class GuestService:
         if "advance_paid" in fields and fields["advance_paid"] is not None and fields["advance_paid"] < 0:
             raise ValueError("advance_paid: Advance paid cannot be negative.")
 
+        if "joined_at" in fields:
+            self._validate_joined_at(fields["joined_at"])
+
         target_room_id = fields.get("room_id", guest.room_id)
         target_active = fields.get("active", guest.active)
         
@@ -115,6 +131,17 @@ class GuestService:
 
         if not target_active and guest.active:
              fields["moved_out_at"] = fields.get("moved_out_at", datetime.now(timezone.utc).date())
+
+        # Checked against the EFFECTIVE pair — for whichever of the two fields
+        # this PATCH isn't changing, the stored value is what counts. Runs after
+        # the auto-move-out above so it sees the date that will actually be
+        # written, not the one the caller happened to send. Mirrors the
+        # chk_guests__moved_out_after_joined DB constraint, so a violation comes
+        # back as a 400 with a readable message instead of a 500 from Postgres.
+        effective_joined_at = fields.get("joined_at", guest.joined_at)
+        effective_moved_out_at = fields.get("moved_out_at", guest.moved_out_at)
+        if effective_moved_out_at is not None and effective_moved_out_at < effective_joined_at:
+            raise ValueError("joined_at: Join date must be on or before the move-out date.")
 
         fields["updated_by"] = updated_by
         return await self.guest_repo.update(guest_id, **fields)

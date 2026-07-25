@@ -30,6 +30,12 @@ class Room(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     capacity: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     is_ac: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     advance_details: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+
+    # Rent for the WHOLE room, per month. A prefill template for the guest form
+    # only (the per-guest share is default_rent / capacity) — guests.monthly_rent
+    # stays the sole source of truth for billing. Editing this never touches an
+    # existing guest's rent: no trigger, no cascade, no backfill.
+    default_rent: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -37,6 +43,7 @@ class Room(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     __table_args__ = (
         CheckConstraint('capacity BETWEEN 1 AND 20', name='chk_rooms__capacity'),
+        CheckConstraint('default_rent IS NULL OR default_rent >= 0', name='chk_rooms__default_rent'),
         Index(
             'ix_rooms__property_id_room_number_unique',
             'property_id',

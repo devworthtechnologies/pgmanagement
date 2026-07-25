@@ -157,6 +157,31 @@ describe('properties', () => {
     expect(S().currentPropertyId).toBe('p1');
   });
 
+  it('createProperty appends to an existing list and switches to the new one', async () => {
+    // The multi-PG case: adding a second PG must not replace the first, and
+    // must leave you looking at the one you just created.
+    useStore.setState({ properties: [property], currentPropertyId: 'p1' });
+    const second = { id: 'p2', name: 'Moonlight PG' };
+    propertiesApi.create.mockResolvedValue(second);
+
+    const res = await S().createProperty({ name: 'Moonlight PG' });
+
+    expect(res.ok).toBe(true);
+    expect(S().properties).toEqual([property, second]);
+    expect(S().currentPropertyId).toBe('p2');
+  });
+
+  it('createProperty leaves the current selection alone when it fails', async () => {
+    useStore.setState({ properties: [property], currentPropertyId: 'p1' });
+    propertiesApi.create.mockRejectedValue(new Error('Name already taken'));
+
+    const res = await S().createProperty({ name: 'Moonlight PG' });
+
+    expect(res.ok).toBe(false);
+    expect(S().properties).toEqual([property]);
+    expect(S().currentPropertyId).toBe('p1');
+  });
+
   it('updateCurrentProperty patches the matching property in place', async () => {
     useStore.setState({ properties: [property], currentPropertyId: 'p1' });
     const updated = { ...property, name: 'New Name' };
@@ -178,5 +203,10 @@ describe('properties', () => {
     useStore.setState({ properties: [property, { id: 'p2', name: 'Other PG' }], currentPropertyId: 'p1' });
     S().selectProperty('p2');
     expect(S().currentPropertyId).toBe('p2');
+
+    // ...and back, since the picker can switch either direction.
+    S().selectProperty('p1');
+    expect(S().currentPropertyId).toBe('p1');
+    expect(S().properties).toHaveLength(2);
   });
 });

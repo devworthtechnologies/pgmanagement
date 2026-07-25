@@ -1,11 +1,14 @@
 import pytest
 import uuid
+from datetime import datetime, timedelta, timezone
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.models.property import Property
 from app.models.property_member import PropertyMember, PropertyRole
 from app.models.room import Room, RoomType
+from app.models.guest import Guest
 
 @pytest.fixture
 async def setup_guests_api(db_session: AsyncSession):
@@ -81,6 +84,207 @@ async def test_guests_crud_and_aadhar_security(async_client: AsyncClient, setup_
     assert patch_resp.json()["aadhar_last4"] == "1098"
     assert "aadhar_number_encrypted" not in patch_resp.json()
     assert "aadhar_number" not in patch_resp.json()
+
+@pytest.mark.asyncio
+async def test_guest_patch_without_aadhar_key_keeps_stored_value(
+    async_client: AsyncClient, setup_guests_api, db_session: AsyncSession
+):
+    """
+    Omitting aadhar_number must leave the stored ID alone; sending an explicit
+    null must clear it. Two different intents that both used to look identical
+    on the wire, because the edit form sent `aadhar_number: null` on every save
+    (the field starts blank — the number is never sent back to the client) and
+    so wiped the ID on file every time a guest was edited.
+    """
+    prop_id = setup_guests_api["prop_id"]
+    room_1 = setup_guests_api["room_1"]
+    headers = {"Authorization": f"Bearer {setup_guests_api['token']}"}
+
+    create_resp = await async_client.post(
+        f"/api/v1/properties/{prop_id}/guests",
+        json={
+            "room_id": str(room_1),
+            "full_name": "Aadhar Keeper",
+            "phone": "9876543210",
+            "monthly_rent": 5000,
+            "joined_at": "2026-01-01",
+            "aadhar_number": "123456789012",
+        },
+        headers=headers
+    )
+    assert create_resp.status_code == 201
+    guest_id = create_resp.json()["id"]
+    assert create_resp.json()["aadhar_last4"] == "9012"
+
+    # PATCH with NO aadhar_number key at all -> exclude_unset drops it, the
+    # router's aadhar branch never runs, stored value survives.
+    patch_resp = await async_client.patch(
+        f"/api/v1/properties/{prop_id}/guests/{guest_id}",
+        json={"full_name": "Aadhar Keeper Renamed"},
+        headers=headers
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["full_name"] == "Aadhar Keeper Renamed"
+    assert patch_resp.json()["aadhar_last4"] == "9012"
+
+    # ...and the encrypted column behind it is still populated, not just last4.
+    db_session.expire_all()
+    row = (await db_session.execute(
+        select(Guest.aadhar_number_encrypted, Guest.aadhar_last4).where(Guest.id == uuid.UUID(guest_id))
+    )).one()
+    assert row.aadhar_number_encrypted == b"123456789012"
+    assert row.aadhar_last4 == "9012"
+
+    # Explicit null still clears BOTH columns — that behaviour is correct and
+    # deliberately kept reachable, there's just no UI asking for it today.
+    clear_resp = await async_client.patch(
+        f"/api/v1/properties/{prop_id}/guests/{guest_id}",
+        json={"aadhar_number": None},
+        headers=headers
+    )
+    assert clear_resp.status_code == 200
+    assert clear_resp.json()["aadhar_last4"] is None
+
+    db_session.expire_all()
+    cleared = (await db_session.execute(
+        select(Guest.aadhar_number_encrypted, Guest.aadhar_last4).where(Guest.id == uuid.UUID(guest_id))
+    )).one()
+    assert cleared.aadhar_number_encrypted is None
+    assert cleared.aadhar_last4 is None
+
+@pytest.mark.asyncio
+async def test_guest_joined_at_manual_entry(async_client: AsyncClient, setup_guests_api):
+    """
+    Staff type the join date by hand, so it can be backdated (entering an
+    existing tenant) but never postdated, and a typo is correctable via PATCH.
+    Dates are computed from today so these stay meaningful next year.
+    """
+    prop_id = setup_guests_api["prop_id"]
+    room_1 = setup_guests_api["room_1"]
+    headers = {"Authorization": f"Bearer {setup_guests_api['token']}"}
+
+    today = datetime.now(timezone.utc).date()
+    backdated = today - timedelta(days=120)
+    tomorrow = today + timedelta(days=1)
+
+    # Backdated is fine — this is how existing tenants get entered.
+    create_resp = await async_client.post(
+        f"/api/v1/properties/{prop_id}/guests",
+        json={
+            "room_id": str(room_1),
+            "full_name": "Backdated Guest",
+            "phone": "9876543210",
+            "monthly_rent": 5000,
+            "joined_at": backdated.isoformat(),
+        },
+        headers=headers
+    )
+    assert create_resp.status_code == 201
+    assert create_resp.json()["joined_at"] == backdated.isoformat()
+    guest_id = create_resp.json()["id"]
+
+    # Future is not.
+    future_resp = await async_client.post(
+        f"/api/v1/properties/{prop_id}/guests",
+        json={
+            "room_id": str(room_1),
+            "full_name": "Future Guest",
+            "phone": "9876543211",
+            "monthly_rent": 5000,
+            "joined_at": tomorrow.isoformat(),
+        },
+        headers=headers
+    )
+    assert future_resp.status_code == 400
+    assert "future" in future_resp.json()["detail"].lower()
+
+    # Neither is a year that's obviously a fat-fingered typo.
+    ancient_resp = await async_client.post(
+        f"/api/v1/properties/{prop_id}/guests",
+        json={
+            "room_id": str(room_1),
+            "full_name": "Ancient Guest",
+            "phone": "9876543212",
+            "monthly_rent": 5000,
+            "joined_at": "1999-12-31",
+        },
+        headers=headers
+    )
+    assert ancient_resp.status_code == 400
+    assert "past" in ancient_resp.json()["detail"].lower()
+
+    # A typo IS correctable now — GuestUpdateRequest accepts joined_at.
+    corrected = today - timedelta(days=60)
+    patch_resp = await async_client.patch(
+        f"/api/v1/properties/{prop_id}/guests/{guest_id}",
+        json={"joined_at": corrected.isoformat()},
+        headers=headers
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["joined_at"] == corrected.isoformat()
+
+    # ...but not to a future date.
+    bad_patch = await async_client.patch(
+        f"/api/v1/properties/{prop_id}/guests/{guest_id}",
+        json={"joined_at": tomorrow.isoformat()},
+        headers=headers
+    )
+    assert bad_patch.status_code == 400
+
+@pytest.mark.asyncio
+async def test_guest_joined_at_cannot_pass_move_out_date(async_client: AsyncClient, setup_guests_api):
+    """
+    A guest can't have joined after they moved out. The service checks the
+    EFFECTIVE pair (stored value for whichever field the PATCH isn't touching)
+    so this comes back as a readable 400, not a 500 from the DB constraint.
+    """
+    prop_id = setup_guests_api["prop_id"]
+    room_1 = setup_guests_api["room_1"]
+    headers = {"Authorization": f"Bearer {setup_guests_api['token']}"}
+
+    today = datetime.now(timezone.utc).date()
+    joined = today - timedelta(days=120)
+    moved_out = today - timedelta(days=90)
+
+    create_resp = await async_client.post(
+        f"/api/v1/properties/{prop_id}/guests",
+        json={
+            "room_id": str(room_1),
+            "full_name": "Moved Out Guest",
+            "phone": "9876543213",
+            "monthly_rent": 5000,
+            "joined_at": joined.isoformat(),
+        },
+        headers=headers
+    )
+    assert create_resp.status_code == 201
+    guest_id = create_resp.json()["id"]
+
+    move_out_resp = await async_client.patch(
+        f"/api/v1/properties/{prop_id}/guests/{guest_id}",
+        json={"active": False, "moved_out_at": moved_out.isoformat()},
+        headers=headers
+    )
+    assert move_out_resp.status_code == 200
+    assert move_out_resp.json()["moved_out_at"] == moved_out.isoformat()
+
+    # Push the join date past the stored move-out date -> 400
+    bad_resp = await async_client.patch(
+        f"/api/v1/properties/{prop_id}/guests/{guest_id}",
+        json={"joined_at": (today - timedelta(days=30)).isoformat()},
+        headers=headers
+    )
+    assert bad_resp.status_code == 400
+    assert "move-out" in bad_resp.json()["detail"].lower()
+
+    # Landing exactly ON the move-out date is allowed (joined and left same day).
+    ok_resp = await async_client.patch(
+        f"/api/v1/properties/{prop_id}/guests/{guest_id}",
+        json={"joined_at": moved_out.isoformat()},
+        headers=headers
+    )
+    assert ok_resp.status_code == 200
+    assert ok_resp.json()["joined_at"] == moved_out.isoformat()
 
 @pytest.mark.asyncio
 async def test_guests_list_filtering(async_client: AsyncClient, setup_guests_api):

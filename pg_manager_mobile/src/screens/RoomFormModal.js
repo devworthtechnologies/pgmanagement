@@ -6,6 +6,8 @@ import FormField from '../components/FormField';
 import ModalShell from '../components/ModalShell';
 import PrimaryButton from '../components/PrimaryButton';
 import { ApiError, roomsApi } from '../lib/api';
+import { formatINR } from '../lib/format';
+import { perGuestRent } from '../lib/rent';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme/theme';
 
@@ -48,6 +50,7 @@ export default function RoomFormModal({ navigation, route }) {
   const [customType, setCustomType] = useState('');
   const [capacity, setCapacity] = useState('');
   const [isAc, setIsAc] = useState(false);
+  const [defaultRent, setDefaultRent] = useState('');
   const [advanceDetails, setAdvanceDetails] = useState('');
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -60,6 +63,7 @@ export default function RoomFormModal({ navigation, route }) {
     setCustomType(editingRoom.room_type === CUSTOM ? editingRoom.custom_type_label || '' : '');
     setCapacity(String(editingRoom.capacity));
     setIsAc(!!editingRoom.is_ac);
+    setDefaultRent(editingRoom.default_rent != null ? String(editingRoom.default_rent) : '');
     setAdvanceDetails(editingRoom.advance_details != null ? String(editingRoom.advance_details) : '');
   }, [editingRoom]);
 
@@ -77,6 +81,10 @@ export default function RoomFormModal({ navigation, route }) {
 
   const occupied = editingRoom?.occupied_beds ?? 0;
 
+  // Live "what each guest will be prefilled" preview — null until both the
+  // rent and a valid capacity are filled in.
+  const rentShare = perGuestRent(defaultRent.trim(), capacity.trim());
+
   const handleSave = async () => {
     const cap = Number(capacity);
 
@@ -88,6 +96,10 @@ export default function RoomFormModal({ navigation, route }) {
       next.capacity = 'Whole number between 1 and 20.';
     } else if (editingRoom && cap < occupied) {
       next.capacity = `At least ${occupied} — that many guests live here now.`;
+    }
+    const rentValue = defaultRent.trim() ? Number(defaultRent) : null;
+    if (defaultRent.trim() && (!Number.isFinite(rentValue) || rentValue < 0)) {
+      next.defaultRent = 'Enter a valid amount.';
     }
     const advanceValue = advanceDetails.trim() ? Number(advanceDetails) : null;
     if (advanceDetails.trim() && (!Number.isFinite(advanceValue) || advanceValue < 0)) {
@@ -102,6 +114,7 @@ export default function RoomFormModal({ navigation, route }) {
       custom_type_label: typeChoice === CUSTOM ? customType.trim() : undefined,
       capacity: cap,
       is_ac: isAc,
+      default_rent: rentValue,
       advance_details: advanceValue,
     };
 
@@ -221,6 +234,22 @@ export default function RoomFormModal({ navigation, route }) {
           <Chip label="Non-AC" selected={!isAc} onPress={() => setIsAc(false)} testID="ac-no-chip" />
         </View>
       </View>
+
+      <FormField
+        label="Room rent (₹/month — full room)"
+        value={defaultRent}
+        onChangeText={(v) => { setDefaultRent(v); clearError('defaultRent'); }}
+        keyboardType="numeric"
+        placeholder="e.g. 10000"
+        error={errors.defaultRent}
+        testID="room-default-rent-input"
+      />
+      {rentShare != null && !errors.defaultRent && (
+        <Text style={styles.hint}>
+          {formatINR(defaultRent)} ÷ {Number(capacity)} bed{Number(capacity) > 1 ? 's' : ''} ={' '}
+          {formatINR(rentShare)} per guest
+        </Text>
+      )}
 
       <FormField
         label="Advance / deposit (₹)"

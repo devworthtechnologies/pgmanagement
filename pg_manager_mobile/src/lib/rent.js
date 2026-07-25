@@ -32,3 +32,19 @@ export function prevMonthKey(monthKey = monthKeyOf()) {
 export function monthKeyToDate(monthKey) {
   return `${monthKey}-01`;
 }
+
+// A room's rent covers the whole room; each guest's share is it split across
+// BEDS, not across current occupants. Dividing by occupants would prefill the
+// first guest in an empty 2-sharing room ₹10,000 and the second ₹5,000 — two
+// people in the same room on different rent for no reason. Capacity keeps the
+// number stable no matter who's living there.
+//
+// Prefill only. guests.monthly_rent is what actually gets billed, and staff can
+// override this for a solo occupant who genuinely pays for the whole room.
+export function perGuestRent(defaultRent, capacity) {
+  if (defaultRent === null || defaultRent === undefined || defaultRent === '') return null;
+  const rent = Number(defaultRent);
+  const beds = Number(capacity);
+  if (!Number.isFinite(rent) || !Number.isFinite(beds) || beds < 1) return null;
+  return Math.round(rent / beds);
+}

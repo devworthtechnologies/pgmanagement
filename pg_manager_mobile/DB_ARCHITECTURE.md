@@ -88,7 +88,9 @@ Key fields: `id`, `property_id`, `user_id`, `role` (`owner | manager | staff`), 
 ### 4.4 `rooms`
 Physical rooms within a property. Occupancy and "Full/Available" status are **derived at query time from active guests, never stored** — this preserves the one piece of domain logic the current mobile app already gets right, and storing a redundant `occupied_count` column would just create a value that can drift from reality.
 
-Key fields: `id`, `property_id`, `room_number`, `room_type` (enum + `custom_type_label` for the `'custom'` case), `capacity` (1–20), `is_ac`, `advance_details` (numeric — the mobile app currently stores this as free text, which is a data-quality bug worth fixing at the schema level, not carrying forward).
+Key fields: `id`, `property_id`, `room_number`, `room_type` (enum + `custom_type_label` for the `'custom'` case), `capacity` (1–20), `is_ac`, `advance_details` (numeric — the mobile app currently stores this as free text, which is a data-quality bug worth fixing at the schema level, not carrying forward), `default_rent` (nullable numeric).
+
+`default_rent` is the rent for the **whole room** per month, and it is a **prefill template, not a live reference**. The guest form divides it by `capacity` (never by current occupants — that would put two people in the same room on different rent depending on who arrived first) to prefill `guests.monthly_rent`, and that is the entire extent of its effect. `guests.monthly_rent` remains the sole source of truth for billing: there is deliberately no trigger, cascade or backfill from this column, because editing a room's rate in December must not silently rewrite every payment balance back to move-in day — including for guests who have already moved out. Nullable because every room created before the column existed has no default and must keep working.
 
 ### 4.5 `guests`
 The largest "entity" table by row count (though not by storage volume — see §0). One row per guest **per stay**, not per person — if the same individual leaves and returns six months later as a new tenancy, that's a new row, because rent, room, and dates all differ and the payment history needs to attach to a specific stay, not a person.
@@ -250,10 +252,12 @@ Beyond foreign keys, enforced at the database level — not just in application/
 | Table | Constraint | Rule |
 |---|---|---|
 | `rooms` | `ck_rooms__capacity_range` | `capacity BETWEEN 1 AND 20` |
+| `rooms` | `chk_rooms__default_rent` | `default_rent IS NULL OR default_rent >= 0` |
 | `rooms` | `uq_rooms__property_id_room_number` | unique on `(property_id, room_number)`, **partial**: `WHERE deleted_at IS NULL` — so a deleted room's number can be reused without a permanent unique-index collision |
 | `guests` | `ck_guests__monthly_rent_nonneg` | `monthly_rent >= 0` |
 | `guests` | `ck_guests__advance_nonneg` | `advance_paid IS NULL OR advance_paid >= 0` |
 | `guests` | `ck_guests__moveout_consistency` | `active = true OR moved_out_at IS NOT NULL` — can't be inactive without a move-out date |
+| `guests` | `chk_guests__moved_out_after_joined` | `moved_out_at IS NULL OR moved_out_at >= joined_at` — a guest can't have left before they arrived. Matters now that `joined_at` is typed in by hand rather than hardcoded to today |
 | `guests` | `ck_guests__phone_format` | regex backstop matching the app's validation, so a bad phone can't enter via a non-app write path |
 | `payments` | `ck_payments__amount_positive` | `amount > 0` |
 | `payments` | `ck_payments__for_month_is_first_of_month` | `date_trunc('month', for_month) = for_month` — enforces the "first-of-month" shape at the DB level instead of trusting every caller to normalize it |

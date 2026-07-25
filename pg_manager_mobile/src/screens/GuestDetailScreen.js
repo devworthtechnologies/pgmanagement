@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import BackHeader from '../components/BackHeader';
 import PrimaryButton from '../components/PrimaryButton';
 import { confirm, notify } from '../lib/confirm';
+import { formatIsoToDdMmYyyy } from '../lib/date';
 import { formatINR, initialsOf } from '../lib/format';
 import { callPhone } from '../lib/phone';
 import { monthKeyOf, monthLabel } from '../lib/rent';
@@ -163,13 +164,13 @@ export default function GuestDetailScreen({ navigation, route }) {
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Joined</Text>
               <Text style={styles.metaValue}>
-                {guest.joined_at ? format(new Date(guest.joined_at), 'd MMM yyyy') : '—'}
+                {formatIsoToDdMmYyyy(guest.joined_at) || '—'}
               </Text>
             </View>
             {!guest.active && guest.moved_out_at && (
               <View style={styles.metaItem}>
                 <Text style={styles.metaLabel}>Moved out</Text>
-                <Text style={styles.metaValue}>{format(new Date(guest.moved_out_at), 'd MMM yyyy')}</Text>
+                <Text style={styles.metaValue}>{formatIsoToDdMmYyyy(guest.moved_out_at)}</Text>
               </View>
             )}
             {guest.advance_paid != null && (

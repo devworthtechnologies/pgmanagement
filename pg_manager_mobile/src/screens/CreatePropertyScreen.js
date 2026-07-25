@@ -3,18 +3,24 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Building2 } from 'lucide-react-native';
 
+import BackHeader from '../components/BackHeader';
 import FormField from '../components/FormField';
 import PrimaryButton from '../components/PrimaryButton';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme/theme';
 
-// Shown once a logged-in user has zero properties — replaces the old
-// OnboardingScreen, which just captured a local pgName/ownerName pair.
-// Now it actually creates a Property row via POST /properties, since the
-// backend is multi-tenant (a user can own several properties; this is
-// just the "you have none yet" empty state).
-export default function CreatePropertyScreen() {
+// Two jobs: the "you have no PG yet" first-run screen, and the "add another PG"
+// screen reached from the property picker. The only differences are whether
+// there's a way back and where a successful create lands you.
+export default function CreatePropertyScreen({ navigation }) {
   const createProperty = useStore((s) => s.createProperty);
+  const properties = useStore((s) => s.properties);
+
+  // Frozen at mount on purpose. createProperty() pushes the new PG into the
+  // store, so reading properties.length live would flip this mid-save — the
+  // first-run screen would sprout a back button on its way out.
+  const [isFirstProperty] = useState(() => properties.length === 0);
+
   const [name, setName] = useState('');
   const [city, setCity] = useState('');
   const [errors, setErrors] = useState({});
@@ -29,12 +35,23 @@ export default function CreatePropertyScreen() {
     setSaving(true);
     const res = await createProperty({ name: name.trim(), city: city.trim() || undefined });
     setSaving(false);
-    if (!res.ok) setErrors({ name: res.error });
-    // On success the root navigator switches to the main app automatically.
+    if (!res.ok) {
+      setErrors({ name: res.error });
+      return;
+    }
+
+    // The navigator no longer swaps screens by itself on 0→1 (initialRouteName
+    // only applies on first mount), so say where to go. replace() on the first
+    // PG because this screen was the stack root and there's nothing to go back
+    // to; navigate() otherwise, which pops the picker modal off too.
+    if (isFirstProperty) navigation.replace('Main');
+    else navigation.navigate('Main');
+    // createProperty() already made the new PG current.
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {!isFirstProperty && <BackHeader title="Add a PG" />}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -48,10 +65,11 @@ export default function CreatePropertyScreen() {
             <View style={styles.iconCircle}>
               <Building2 color={theme.colors.primary} size={32} strokeWidth={2} />
             </View>
-            <Text style={styles.title}>Set up your property</Text>
+            <Text style={styles.title}>{isFirstProperty ? 'Set up your PG' : 'Add another PG'}</Text>
             <Text style={styles.subtitle}>
-              Give your PG a name to get started. You can add more properties later from
-              Settings.
+              {isFirstProperty
+                ? 'Give your PG a name to get started. You can add more later.'
+                : 'Each PG keeps its own rooms, guests and payments. Switch between them from the header.'}
             </Text>
           </View>
 

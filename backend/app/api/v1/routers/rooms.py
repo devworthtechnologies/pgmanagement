@@ -51,6 +51,7 @@ async def create_room(
             capacity=request.capacity,
             is_ac=request.is_ac,
             advance_details=request.advance_details,
+            default_rent=request.default_rent,
             created_by=member.user_id
         )
         await db.commit()

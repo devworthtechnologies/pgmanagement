@@ -52,7 +52,44 @@ async def test_create_room_duplicate_number_rejection():
     mock_repo.get_by_property_and_number.assert_called_once_with(prop_id, "102")
     mock_repo.create.assert_called_once()
 
-# Note: The `delete_room` integration tests checking the SQL SELECT EXISTS on `guests` 
+@pytest.mark.asyncio
+async def test_create_room_threads_default_rent():
+    mock_repo = AsyncMock()
+    mock_repo.get_by_property_and_number.return_value = None
+    mock_repo.create.return_value = Room(id=uuid.uuid4(), room_number="401")
+    service = RoomService(room_repo=mock_repo)
+
+    await service.create_room(
+        property_id=uuid.uuid4(),
+        room_number="401",
+        room_type=RoomType.DOUBLE,
+        custom_type_label=None,
+        capacity=2,
+        is_ac=False,
+        advance_details=None,
+        created_by=uuid.uuid4(),
+        default_rent=10000
+    )
+    assert mock_repo.create.call_args.kwargs["default_rent"] == 10000
+
+    # Omitted entirely -> None, not an error. Rooms created before this feature
+    # existed have no default rent.
+    mock_repo.reset_mock()
+    mock_repo.get_by_property_and_number.return_value = None
+    mock_repo.create.return_value = Room(id=uuid.uuid4(), room_number="402")
+    await service.create_room(
+        property_id=uuid.uuid4(),
+        room_number="402",
+        room_type=RoomType.SINGLE,
+        custom_type_label=None,
+        capacity=1,
+        is_ac=False,
+        advance_details=None,
+        created_by=uuid.uuid4()
+    )
+    assert mock_repo.create.call_args.kwargs["default_rent"] is None
+
+# Note: The `delete_room` integration tests checking the SQL SELECT EXISTS on `guests`
 # are intentionally deferred. The genuine ordering constraint requires the `guests` table 
 # schema to exist in PostgreSQL first (scheduled for milestone 3.5), otherwise it triggers 
 # a "relation does not exist" ProgrammingError on the raw DB query.

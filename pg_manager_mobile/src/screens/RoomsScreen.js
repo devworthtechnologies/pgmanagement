@@ -9,15 +9,19 @@ import EmptyState from '../components/EmptyState';
 import ScreenHeader from '../components/ScreenHeader';
 import { confirm, notify } from '../lib/confirm';
 import { formatINR, roomTypeLabel } from '../lib/format';
+import { perGuestRent } from '../lib/rent';
 import { ApiError, guestsApi, roomsApi } from '../lib/api';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme/theme';
 
+// Stable identity so the memos below don't recompute on every render while a
+// property switch is in flight.
+const EMPTY = [];
+
 export default function RoomsScreen({ navigation }) {
   const currentPropertyId = useStore((s) => s.currentPropertyId);
 
-  const [rooms, setRooms] = useState([]);
-  const [guests, setGuests] = useState([]);
+  const [loaded, setLoaded] = useState({ propertyId: null, rooms: EMPTY, guests: EMPTY });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -30,8 +34,7 @@ export default function RoomsScreen({ navigation }) {
         roomsApi.list(currentPropertyId),
         guestsApi.list(currentPropertyId, { active: true }),
       ]);
-      setRooms(roomList);
-      setGuests(guestList);
+      setLoaded({ propertyId: currentPropertyId, rooms: roomList, guests: guestList });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load rooms.');
     } finally {
@@ -44,6 +47,13 @@ export default function RoomsScreen({ navigation }) {
       load();
     }, [load])
   );
+
+  // Rows are only rendered when they came from the PG currently selected. On a
+  // switch, currentPropertyId changes before the new fetch lands, and without
+  // this the previous PG's rooms stay on screen until it does.
+  const awaitingProperty = loaded.propertyId !== currentPropertyId;
+  const rooms = awaitingProperty ? EMPTY : loaded.rooms;
+  const guests = awaitingProperty ? EMPTY : loaded.guests;
 
   const sortedRooms = useMemo(
     () =>
@@ -71,7 +81,7 @@ export default function RoomsScreen({ navigation }) {
       onConfirm: async () => {
         try {
           await roomsApi.remove(currentPropertyId, room.id);
-          setRooms((rs) => rs.filter((r) => r.id !== room.id));
+          setLoaded((l) => ({ ...l, rooms: l.rooms.filter((r) => r.id !== room.id) }));
         } catch (err) {
           if (err instanceof ApiError && err.status === 409) {
             notify('Room is occupied', `Room ${room.room_number} still has guests. Move them out or to another room first.`);
@@ -127,6 +137,13 @@ export default function RoomsScreen({ navigation }) {
         <View style={styles.roomFooter}>
           <View style={styles.roomDetailsCol}>
             <Text style={styles.detailText}>{roomTypeLabel(item)} • {item.is_ac ? 'AC' : 'Non-AC'}</Text>
+            {item.default_rent != null && (
+              <Text style={styles.advanceText}>
+                Rent: {formatINR(item.default_rent)}
+                {perGuestRent(item.default_rent, item.capacity) != null &&
+                  ` · ${formatINR(perGuestRent(item.default_rent, item.capacity))}/guest`}
+              </Text>
+            )}
             {item.advance_details != null && (
               <Text style={styles.advanceText}>Advance: {formatINR(item.advance_details)}</Text>
             )}
@@ -177,7 +194,7 @@ export default function RoomsScreen({ navigation }) {
         }
       />
 
-      {loading && rooms.length === 0 ? (
+      {(loading || awaitingProperty) && rooms.length === 0 ? (
         <ActivityIndicator style={styles.loading} color={theme.colors.primary} />
       ) : (
         <FlatList

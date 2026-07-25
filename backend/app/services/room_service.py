@@ -21,7 +21,8 @@ class RoomService:
         capacity: int,
         is_ac: bool,
         advance_details: float | None,
-        created_by: uuid.UUID | None
+        created_by: uuid.UUID | None,
+        default_rent: float | None = None
     ) -> Room:
         existing_room = await self.room_repo.get_by_property_and_number(property_id, room_number)
         if existing_room:
@@ -35,6 +36,7 @@ class RoomService:
             capacity=capacity,
             is_ac=is_ac,
             advance_details=advance_details,
+            default_rent=default_rent,
             created_by=created_by,
             updated_by=created_by
         )

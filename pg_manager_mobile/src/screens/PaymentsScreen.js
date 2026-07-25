@@ -15,11 +15,15 @@ import { ApiError, guestsApi, paymentsApi } from '../lib/api';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme/theme';
 
+// Stable identities so the memo below doesn't recompute on every render while a
+// property switch is in flight.
+const EMPTY = [];
+const EMPTY_MAP = {};
+
 export default function PaymentsScreen({ navigation }) {
   const currentPropertyId = useStore((s) => s.currentPropertyId);
 
-  const [payments, setPayments] = useState([]);
-  const [guestNameById, setGuestNameById] = useState({});
+  const [loaded, setLoaded] = useState({ propertyId: null, payments: EMPTY, guestNameById: EMPTY_MAP });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -32,10 +36,9 @@ export default function PaymentsScreen({ navigation }) {
         paymentsApi.list(currentPropertyId),
         guestsApi.list(currentPropertyId),
       ]);
-      setPayments(paymentList);
       const nameMap = {};
       for (const g of guestList) nameMap[g.id] = g.full_name;
-      setGuestNameById(nameMap);
+      setLoaded({ propertyId: currentPropertyId, payments: paymentList, guestNameById: nameMap });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load payments.');
     } finally {
@@ -48,6 +51,13 @@ export default function PaymentsScreen({ navigation }) {
       load();
     }, [load])
   );
+
+  // Rows are only rendered when they came from the PG currently selected. On a
+  // switch, currentPropertyId changes before the new fetch lands, and without
+  // this the previous PG's ledger stays on screen until it does.
+  const awaitingProperty = loaded.propertyId !== currentPropertyId;
+  const payments = awaitingProperty ? EMPTY : loaded.payments;
+  const guestNameById = awaitingProperty ? EMPTY_MAP : loaded.guestNameById;
 
   const sections = useMemo(() => {
     const byMonth = new Map();
@@ -76,7 +86,7 @@ export default function PaymentsScreen({ navigation }) {
       onConfirm: async () => {
         try {
           await paymentsApi.remove(currentPropertyId, payment.id);
-          setPayments((ps) => ps.filter((p) => p.id !== payment.id));
+          setLoaded((l) => ({ ...l, payments: l.payments.filter((p) => p.id !== payment.id) }));
         } catch (err) {
           // Silently reloading is enough feedback here — the row will
           // reappear if the delete actually failed server-side.
@@ -133,7 +143,7 @@ export default function PaymentsScreen({ navigation }) {
         }
       />
 
-      {loading && payments.length === 0 ? (
+      {(loading || awaitingProperty) && payments.length === 0 ? (
         <ActivityIndicator style={styles.loading} color={theme.colors.primary} />
       ) : (
         <SectionList

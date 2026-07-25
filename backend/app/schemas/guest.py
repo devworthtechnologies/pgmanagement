@@ -36,6 +36,7 @@ class GuestUpdateRequest(BaseModel):
     aadhar_number: str | None = None
     permanent_address: str | None = None
     active: bool | None = None
+    joined_at: date | None = None
     moved_out_at: date | None = None
 
 class GuestResponse(BaseModel):
