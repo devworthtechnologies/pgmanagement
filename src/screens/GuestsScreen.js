@@ -1,0 +1,324 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { Phone, Plus, Search, UserPlus } from 'lucide-react-native';
+import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
+
+import Chip from '../components/Chip';
+import EmptyState from '../components/EmptyState';
+import ScreenHeader from '../components/ScreenHeader';
+import { formatINR, initialsOf } from '../lib/format';
+import { callPhone } from '../lib/phone';
+import { monthKeyOf } from '../lib/rent';
+import { ApiError, guestsApi, roomsApi, statsApi } from '../lib/api';
+import { useStore } from '../store/useStore';
+import { theme } from '../theme/theme';
+
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'inactive', label: 'Moved out' },
+];
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Stable identities so the memos below don't recompute on every render while a
+// property switch is in flight.
+const EMPTY = [];
+const EMPTY_MAP = {};
+
+export default function GuestsScreen({ navigation }) {
+  const currentPropertyId = useStore((s) => s.currentPropertyId);
+
+  const [loaded, setLoaded] = useState({
+    propertyId: null,
+    guests: EMPTY,
+    rooms: EMPTY,
+    dueByGuestId: EMPTY_MAP,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+
+  // Live mirror of the selection, readable from inside an in-flight request.
+  // A ref rather than a param threaded through load() so that EVERY call path
+  // is covered — focus and Retry alike — with no way to call load() unguarded.
+  const selectedRef = useRef(currentPropertyId);
+  useEffect(() => {
+    selectedRef.current = currentPropertyId;
+  }, [currentPropertyId]);
+
+  const load = useCallback(async () => {
+    // Captured at request time — the selection can change while we're away.
+    const propertyId = currentPropertyId;
+    if (!propertyId) {
+      // No PG selected: resolve the spinner rather than turning forever.
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [guestList, roomList, stats] = await Promise.all([
+        guestsApi.list(propertyId),
+        roomsApi.list(propertyId),
+        statsApi.dashboard(propertyId, monthKeyOf()),
+      ]);
+      const dueMap = {};
+      for (const entry of stats.due_guests) dueMap[entry.guest_id] = entry.balance;
+      // A newer selection took over while this was in flight. Discard it —
+      // writing it would clobber the newer PG's rows, and `loading` now
+      // belongs to that newer request, so don't touch it either.
+      if (selectedRef.current !== propertyId) return;
+      setLoaded({
+        propertyId,
+        guests: guestList,
+        rooms: roomList,
+        dueByGuestId: dueMap,
+      });
+    } catch (err) {
+      if (selectedRef.current !== propertyId) return;
+      setError(err instanceof ApiError ? err.message : 'Could not load guests.');
+    } finally {
+      if (selectedRef.current === propertyId) setLoading(false);
+    }
+  }, [currentPropertyId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  // Rows are only rendered when they came from the PG currently selected. On a
+  // switch, currentPropertyId changes before the new fetch lands, and without
+  // this the previous PG's guests stay on screen until it does.
+  const awaitingProperty = loaded.propertyId !== currentPropertyId;
+  const guests = awaitingProperty ? EMPTY : loaded.guests;
+  const rooms = awaitingProperty ? EMPTY : loaded.rooms;
+  const dueByGuestId = awaitingProperty ? EMPTY_MAP : loaded.dueByGuestId;
+
+  const roomNumberById = useMemo(() => {
+    const map = new Map();
+    for (const r of rooms) map.set(r.id, r.room_number);
+    return map;
+  }, [rooms]);
+
+  const visibleGuests = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return guests
+      .filter((g) => {
+        if (filter === 'active' && !g.active) return false;
+        if (filter === 'inactive' && g.active) return false;
+        if (!q) return true;
+        const roomNumber = String(roomNumberById.get(g.room_id) ?? '');
+        return (
+          g.full_name.toLowerCase().includes(q) ||
+          roomNumber.toLowerCase().includes(q) ||
+          String(g.phone).toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  }, [guests, query, filter, roomNumberById]);
+
+  const renderGuest = ({ item, index }) => {
+    const balance = item.active ? dueByGuestId[item.id] ?? 0 : 0;
+    const roomNumber = roomNumberById.get(item.room_id) ?? '—';
+    return (
+      <AnimatedTouchable
+        entering={FadeInDown.delay(index * 50).springify()}
+        layout={Layout.springify()}
+        style={styles.guestCard}
+        onPress={() => navigation.navigate('GuestDetail', { guestId: item.id })}
+        activeOpacity={0.7}
+        testID={`guest-row-${item.id}`}
+      >
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{initialsOf(item.full_name)}</Text>
+        </View>
+        <View style={styles.details}>
+          <Text style={styles.name} numberOfLines={1}>
+            {item.full_name}
+          </Text>
+          <Text style={styles.roomInfo}>
+            Room {roomNumber} · {formatINR(item.monthly_rent)}/mo
+          </Text>
+        </View>
+        <View style={styles.actions}>
+          {!item.active ? (
+            <View style={[styles.badge, styles.badgeMuted]}>
+              <Text style={[styles.badgeText, styles.badgeTextMuted]}>Moved out</Text>
+            </View>
+          ) : balance > 0 ? (
+            <View style={[styles.badge, styles.badgeDue]}>
+              <Text style={[styles.badgeText, styles.badgeTextDue]}>Due {formatINR(balance)}</Text>
+            </View>
+          ) : (
+            <View style={[styles.badge, styles.badgePaid]}>
+              <Text style={[styles.badgeText, styles.badgeTextPaid]}>Paid</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => callPhone(item.phone)}
+            accessibilityRole="button"
+            accessibilityLabel={`Call ${item.full_name}`}
+          >
+            <Phone color={theme.colors.primary} size={18} strokeWidth={2.5} />
+          </TouchableOpacity>
+        </View>
+      </AnimatedTouchable>
+    );
+  };
+
+  const emptyState = error ? (
+    <EmptyState icon={Search} title="Couldn't load guests" message={error} actionLabel="Retry" onAction={load} />
+  ) : guests.length === 0 ? (
+    <EmptyState
+      icon={UserPlus}
+      title="No guests yet"
+      message="Add your first guest and their rent will be tracked automatically each month."
+      actionLabel="Add guest"
+      onAction={() => navigation.navigate('GuestForm')}
+    />
+  ) : (
+    <EmptyState icon={Search} title="No matches" message="Try a different search or filter." />
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScreenHeader
+        title="Guests"
+        right={
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => navigation.navigate('GuestForm')}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Add guest"
+            testID="add-guest"
+          >
+            <Plus color="#FFFFFF" size={24} strokeWidth={2.5} />
+          </TouchableOpacity>
+        }
+      />
+
+      <View style={styles.searchRow}>
+        <Search color={theme.colors.textTertiary} size={18} />
+        <TextInput
+          style={styles.searchInput}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search name, room or phone"
+          placeholderTextColor={theme.colors.textTertiary}
+          autoCorrect={false}
+          testID="guest-search"
+        />
+      </View>
+
+      <View style={styles.filters}>
+        {FILTERS.map((f) => (
+          <Chip
+            key={f.key}
+            label={f.label}
+            selected={filter === f.key}
+            onPress={() => setFilter(f.key)}
+            testID={`guest-filter-${f.key}`}
+          />
+        ))}
+      </View>
+
+      {(loading || awaitingProperty) && guests.length === 0 ? (
+        <ActivityIndicator style={styles.loading} color={theme.colors.primary} />
+      ) : (
+        <FlatList
+          data={visibleGuests}
+          keyExtractor={(item) => item.id}
+          renderItem={renderGuest}
+          contentContainerStyle={styles.listContainer}
+          ListEmptyComponent={emptyState}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: theme.colors.background },
+  loading: { marginTop: theme.spacing.xxl },
+  addButton: {
+    backgroundColor: theme.colors.primary,
+    width: 48,
+    height: 48,
+    borderRadius: theme.borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadows.sm,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  searchInput: { flex: 1, paddingVertical: 12, ...theme.typography.body },
+  filters: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  listContainer: { paddingHorizontal: theme.spacing.lg, paddingBottom: 120, flexGrow: 1 },
+  guestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: theme.spacing.sm,
+    ...theme.shadows.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: theme.spacing.md,
+    overflow: 'hidden',
+  },
+  avatarText: { ...theme.typography.body, fontFamily: 'PlusJakartaSans_700Bold' },
+  details: { flex: 1, marginRight: theme.spacing.sm },
+  name: { ...theme.typography.body, fontFamily: 'PlusJakartaSans_600SemiBold', marginBottom: 2 },
+  roomInfo: { ...theme.typography.caption },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: theme.borderRadius.full },
+  badgeMuted: { backgroundColor: theme.colors.background },
+  badgeDue: { backgroundColor: theme.colors.error + '15' },
+  badgePaid: { backgroundColor: theme.colors.success + '15' },
+  badgeText: { fontSize: 10, fontFamily: 'PlusJakartaSans_700Bold', textTransform: 'uppercase' },
+  badgeTextMuted: { color: theme.colors.textSecondary },
+  badgeTextDue: { color: theme.colors.error },
+  badgeTextPaid: { color: theme.colors.success },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
